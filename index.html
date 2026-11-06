@@ -724,6 +724,8 @@ async function signOutSupabase(){
 }
 let codeReader = null;
 let scanning = false;
+let scannerStarting = false;
+let scanCooldownUntil = 0;
 
 function showToast(msg){
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
@@ -880,42 +882,97 @@ async function addManual(e){
   if(saved){ await sbUpsertItem(saved); sbWriteLog(saved, qty); render(); }
 }
 
-async function startScanner(){
-  const video=document.getElementById('video');
-  document.getElementById('camPlaceholder').style.display='none'; video.style.display='block'; document.getElementById('scanLine').style.display='block';
-  document.getElementById('startBtn').style.display='none'; document.getElementById('stopBtn').style.display='inline-flex';
-  scanning=true;
-  // Prefer native BarcodeDetector if available
-  if('BarcodeDetector' in window){
-    try{
-      const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-      video.srcObject=stream; await video.play();
-      const detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});
-      const loop=async()=>{
-        if(!scanning) return;
-        try{ const codes=await detector.detect(video); if(codes && codes.length){ const code=codes[0].rawValue; stopScanner(); handleBarcode(code,'camera'); return; } }catch(e){}
-        requestAnimationFrame(loop);
-      }; loop(); return;
-    }catch(e){ /* fall through to ZXing */ }
-  }
-  if(window.ZXing){
-    try{
-      codeReader=new ZXing.BrowserMultiFormatReader();
-      const devices=await codeReader.listVideoInputDevices();
-      const deviceId=devices && devices.length ? devices[devices.length-1].deviceId : undefined;
-      await codeReader.decodeFromVideoDevice(deviceId,'video',(result,err)=>{
-        if(result){ const code=result.getText(); stopScanner(); handleBarcode(code,'camera'); }
-      });
-    }catch(e){ showToast('Camera not available — use manual barcode entry'); stopScanner(); }
-  }else{
-    showToast('Scanner library didn’t load — use manual entry'); stopScanner();
+// Continuous scanning: the camera STAYS ON between scans (bulk scan-in at
+// home). After a decode we pause detection ~1.5s so the same barcode is not
+// added twice, then resume on the SAME stream — never stop/start per item.
+// Re-acquiring the camera on iOS Safari routinely came back out of focus,
+// and only a page refresh fixed it.
+async function applyContinuousFocus(stream){
+  try{
+    const track=stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+    if(!track || !track.applyConstraints) return;
+    // focusMode is not exposed on iOS Safari; the try/catch keeps that harmless.
+    await track.applyConstraints({advanced:[{focusMode:'continuous', exposureMode:'continuous', whiteBalanceMode:'continuous'}]});
+  }catch(e){}
+}
+async function openCameraStream(){
+  // Ask for continuous focus up front; if the browser rejects those
+  // constraints, fall back to a plain rear-camera stream instead of failing.
+  try{
+    return await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment', focusMode:'continuous', exposureMode:'continuous', whiteBalanceMode:'continuous'}});
+  }catch(e){
+    return await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
   }
 }
-function stopScanner(){
-  scanning=false;
+function onCameraCode(code){
+  const now=Date.now();
+  if(now < scanCooldownUntil) return;
+  scanCooldownUntil = now + 1500;
+  handleBarcode(code,'camera');
+}
+function releaseCamera(){
   const video=document.getElementById('video');
-  if(video.srcObject){ video.srcObject.getTracks().forEach(t=>t.stop()); video.srcObject=null; }
+  if(video.srcObject){ video.srcObject.getTracks().forEach(t=>{ try{t.stop()}catch(e){} }); video.srcObject=null; }
   if(codeReader){ try{codeReader.reset()}catch(e){} codeReader=null; }
+}
+async function startScanner(){
+  if(scanning || scannerStarting) return;
+  scannerStarting=true;
+  const video=document.getElementById('video');
+  try{
+    // Restart hygiene: fully release any stale stream before acquiring a new
+    // one, so a stale track can never be reused.
+    releaseCamera();
+    await new Promise(r=>setTimeout(r,150));
+    document.getElementById('camPlaceholder').style.display='none'; video.style.display='block'; document.getElementById('scanLine').style.display='block';
+    document.getElementById('startBtn').style.display='none'; document.getElementById('stopBtn').style.display='inline-flex';
+    scanning=true; scanCooldownUntil=0;
+    // Prefer native BarcodeDetector if available
+    if('BarcodeDetector' in window){
+      try{
+        const stream=await openCameraStream();
+        video.srcObject=stream; await video.play();
+        await applyContinuousFocus(stream);
+        const detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});
+        const loop=async()=>{
+          if(!scanning) return;
+          try{ const codes=await detector.detect(video); if(codes && codes.length){ onCameraCode(codes[0].rawValue); } }catch(e){}
+          if(scanning) requestAnimationFrame(loop);
+        }; loop(); return;
+      }catch(e){ releaseCamera(); /* fall through to ZXing */ }
+    }
+    if(window.ZXing){
+      try{
+        codeReader=new ZXing.BrowserMultiFormatReader();
+        const focusConstraints={video:{facingMode:'environment', focusMode:'continuous', exposureMode:'continuous', whiteBalanceMode:'continuous'}};
+        let started=false;
+        if(codeReader.decodeFromConstraints){
+          try{
+            await codeReader.decodeFromConstraints(focusConstraints,'video',(result,err)=>{ if(result){ onCameraCode(result.getText()); } });
+            started=true;
+          }catch(e){ /* fall back to device selection below */ }
+        }
+        if(!started){
+          const devices=await codeReader.listVideoInputDevices();
+          const deviceId=devices && devices.length ? devices[devices.length-1].deviceId : undefined;
+          await codeReader.decodeFromVideoDevice(deviceId,'video',(result,err)=>{
+            if(result){ onCameraCode(result.getText()); }
+          });
+        }
+        // ZXing owns the stream here; apply continuous focus to its track too.
+        if(video.srcObject) await applyContinuousFocus(video.srcObject);
+      }catch(e){ showToast('Camera not available — use manual barcode entry'); stopScanner(); }
+    }else{
+      showToast('Scanner library didn’t load — use manual entry'); stopScanner();
+    }
+  }finally{ scannerStarting=false; }
+}
+function stopScanner(){
+  scanning=false; scanCooldownUntil=0;
+  // Stop is the only place the camera is released; a successful scan no
+  // longer stops it, so the stream (and its focus) survives between items.
+  releaseCamera();
+  const video=document.getElementById('video');
   video.style.display='none'; document.getElementById('camPlaceholder').style.display='block'; document.getElementById('scanLine').style.display='none';
   document.getElementById('startBtn').style.display='inline-flex'; document.getElementById('stopBtn').style.display='none';
 }
