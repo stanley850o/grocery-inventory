@@ -36,10 +36,11 @@ h1{font-family:"Bricolage Grotesque",sans-serif;font-size:clamp(28px,5vw,44px);l
 .stat b{font-size:26px;display:block;line-height:1}
 .stat span{font-size:13px;color:var(--muted)}
 .modeWrap{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:var(--shadow)}
-.modeToggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--surface2);padding:6px;border-radius:999px}
-.modeBtn{border:0;border-radius:999px;padding:14px 10px;font-weight:800;cursor:pointer;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px;font-size:16px}
+.modeToggle{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;background:var(--surface2);padding:6px;border-radius:999px}
+.modeBtn{border:0;border-radius:999px;padding:14px 6px;font-weight:800;cursor:pointer;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:6px;font-size:15px;white-space:nowrap}
 .modeBtn.active-in{background:var(--green);color:white}
 .modeBtn.active-out{background:#dc2626;color:white}
+.modeBtn.active-check{background:#2563eb;color:white}
 .scannerGrid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-top:16px}
 @media(max-width:760px){.scannerGrid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr)}}
 .videoBox{background:#0a0f0a;border-radius:16px;overflow:hidden;position:relative;min-height:220px;display:flex;align-items:center;justify-content:center;color:#a7b8a8;text-align:center;padding:12px}
@@ -109,6 +110,7 @@ summary{cursor:pointer;font-weight:800}
     <div class="modeToggle" role="tablist">
       <button id="btnIn" class="modeBtn active-in" onclick="setMode('in')">⬆ &nbsp;SCAN IN &nbsp;·&nbsp; +1</button>
       <button id="btnOut" class="modeBtn" onclick="setMode('out')">⬇ &nbsp;SCAN OUT &nbsp;·&nbsp; −1</button>
+      <button id="btnCheck" class="modeBtn" onclick="setMode('check')">✓ &nbsp;CHECK &nbsp;·&nbsp; qty</button>
     </div>
 
     <div class="scannerGrid">
@@ -136,6 +138,28 @@ summary{cursor:pointer;font-weight:800}
             <input id="barcodeInput" class="input" inputmode="numeric" placeholder="e.g. 3017620422003" onkeydown="if(event.key==='Enter') handleManualBarcode()">
             <button class="btn btn-primary" onclick="handleManualBarcode()">Lookup</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHECK MODE POPUP: shows quantity on hand + location for the scanned
+         item. Camera keeps running — the card is replaced by the next scan. -->
+    <div id="checkCard" style="display:none;margin-top:14px;background:var(--surface2);border:1px solid var(--line);border-radius:16px;padding:14px">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <img id="checkImg" alt="" style="width:52px;height:52px;object-fit:cover;border-radius:10px;background:white;display:none">
+        <div style="flex:1;min-width:0">
+          <div id="checkName" style="font-weight:800;font-size:18px;line-height:1.2"></div>
+          <div id="checkBrand" class="muted" style="font-size:13px"></div>
+          <div id="checkBarcode" class="muted" style="font-family:monospace;font-size:12px"></div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="closeCheckCard()">Close</button>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap">
+        <div style="font-size:15px"><strong id="checkQty" style="font-size:26px"></strong> <span class="muted">on hand</span></div>
+        <span class="badge" id="checkLoc" style="font-size:14px"></span>
+        <div id="checkAdjustRow" style="display:flex;gap:8px;margin-left:auto">
+          <button class="qtyBtn" onclick="checkAdjust(-1)" aria-label="Decrease quantity">−</button>
+          <button class="qtyBtn" onclick="checkAdjust(1)" aria-label="Increase quantity">+</button>
         </div>
       </div>
     </div>
@@ -742,10 +766,14 @@ function setMode(m){
   state.mode=m;
   document.getElementById('btnIn').className='modeBtn '+(m==='in'?'active-in':'');
   document.getElementById('btnOut').className='modeBtn '+(m==='out'?'active-out':'');
+  document.getElementById('btnCheck').className='modeBtn '+(m==='check'?'active-check':'');
+  if(m!=='check') closeCheckCard();
   var mh = document.getElementById('modeHint');
   if(mh) mh.innerHTML = m==='in'
     ? 'You’re scanning <strong style="color:var(--green)">IN</strong> — perfect for the first big shop at home and for scanning at the store checkout.'
-    : 'You’re scanning <strong style="color:#dc2626">OUT</strong> — scan when you open, use, or finish something so the count drops by 1.';
+    : m==='out'
+    ? 'You’re scanning <strong style="color:#dc2626">OUT</strong> — scan when you open, use, or finish something so the count drops by 1.'
+    : 'You’re checking <strong style="color:#2563eb">QUANTITY</strong> — scan to see how many are on hand and where they are. Nothing is added or removed.';
 }
 function setFilter(f,el){
   state.filter=f;
@@ -809,9 +837,41 @@ async function lookupProduct(barcode){
   return upc;
 }
 
+// CHECK mode: show quantity on hand + location for a scanned item, without
+// changing anything. The camera keeps running; the card is replaced by the
+// next scan, or dismissed with Close.
+let checkItemId=null;
+function showCheckCard(item, barcode){
+  const card=document.getElementById('checkCard'); if(!card) return;
+  checkItemId = item ? item.id : null;
+  document.getElementById('checkName').textContent = item ? item.name : 'Unknown item';
+  document.getElementById('checkBrand').textContent = item ? (item.brand||'') : '';
+  document.getElementById('checkBarcode').textContent = barcode || (item ? item.barcode : '');
+  document.getElementById('checkQty').textContent = item ? item.qty : 0;
+  document.getElementById('checkLoc').textContent = item ? (item.location||'Pantry') : '—';
+  var img=document.getElementById('checkImg');
+  if(item && item.image){ img.src=item.image; img.style.display='block'; } else img.style.display='none';
+  var adj=document.getElementById('checkAdjustRow'); if(adj) adj.style.display = item ? 'flex' : 'none';
+  card.style.display='block';
+}
+function closeCheckCard(){ var c=document.getElementById('checkCard'); if(c) c.style.display='none'; checkItemId=null; }
+function checkAdjust(delta){
+  const it=state.items.find(i=>i.id===checkItemId); if(!it) return;
+  it.qty=Math.max(0, it.qty+delta);
+  log(`${it.name} quantity set to ${it.qty}`, delta);
+  render(); sbUpsertItem(it); if(delta) sbWriteLog(it, delta);
+  showCheckCard(it);
+}
+
 async function handleBarcode(barcode, source){
   barcode=String(barcode).trim(); if(!barcode) return;
   const existing=state.items.find(i=>i.barcode===barcode);
+  // Check mode: never change quantity, never write, never look anything up.
+  if(state.mode==='check'){
+    if(existing){ showCheckCard(existing); showToast(`${existing.name} — ${existing.qty} on hand · ${existing.location||'Pantry'}`); }
+    else{ showCheckCard(null, barcode); showToast('Not in your list yet — 0 on hand'); }
+    return;
+  }
   if(existing){
     applyDelta(existing, state.mode==='in'?1:-1);
     showToast(`${existing.name} — now ${existing.qty}`);
@@ -1021,7 +1081,7 @@ function render(){
         <button class="qtyBtn" onclick="changeQty('${i.id}',1)" aria-label="Increase">+</button>
       </div>
       <div style="display:flex;gap:6px">
-        <button class="btn btn-outline btn-sm" style="flex:1" onclick="handleBarcode('${escapeHtml(i.barcode)}')">Scan again (${state.mode==='in'?'+1':'−1'})</button>
+        <button class="btn btn-outline btn-sm" style="flex:1" onclick="handleBarcode('${escapeHtml(i.barcode)}')">Scan again (${state.mode==='in'?'+1':state.mode==='out'?'−1':'Check'})</button>
         <button class="btn btn-outline btn-sm" onclick="removeItem('${i.id}')">Remove</button>
       </div>
     </article>`).join('')}</div>`;
