@@ -1,0 +1,983 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="color-scheme" content="light dark"/>
+<link rel="icon" href="data:,"/>
+<title>Household Inventory — Scan In / Out</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root{
+  --bg:#f4f6f0; --surface:#ffffff; --surface2:#eef2e8; --line:#dde3d6;
+  --text:#17211a; --muted:#6b7a6e; --green:#166534; --green2:#15803d; --green-light:#dcfce7;
+  --amber:#92400e; --amber-bg:#fef3c7; --red:#991b1b; --red-bg:#fee2e2; --radius:18px;
+  --shadow:0 4px 24px rgba(23,33,26,.08);
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#0f1410; --surface:#1a221b; --surface2:#232d24; --line:#2e3a2f; --text:#eef5ee; --muted:#9aab9d; --green:#4ade80; --green-light:#14532d; --shadow:0 4px 24px rgba(0,0,0,.35); }
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"DM Sans",system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
+a{color:var(--green);font-weight:600}
+button,input,select,textarea{font:inherit}
+.wrap{max-width:1120px;margin:0 auto;padding:18px 16px 40px}
+.topbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--green)}
+h1{font-family:"Bricolage Grotesque",sans-serif;font-size:clamp(28px,5vw,44px);line-height:.95;margin:4px 0 6px;letter-spacing:-.02em}
+.sub{color:var(--muted);max-width:560px;font-size:15px}
+.pill{display:inline-flex;align-items:center;gap:7px;background:var(--amber-bg);color:var(--amber);border:1px solid #fde68a;padding:7px 11px;border-radius:999px;font-size:13px;font-weight:700}
+.dot{width:8px;height:8px;border-radius:50%;background:#f59e0b}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px}
+.stat b{font-size:26px;display:block;line-height:1}
+.stat span{font-size:13px;color:var(--muted)}
+.modeWrap{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:var(--shadow)}
+.modeToggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--surface2);padding:6px;border-radius:999px}
+.modeBtn{border:0;border-radius:999px;padding:14px 10px;font-weight:800;cursor:pointer;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px;font-size:16px}
+.modeBtn.active-in{background:var(--green);color:white}
+.modeBtn.active-out{background:#dc2626;color:white}
+.scannerGrid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-top:16px}
+@media(max-width:760px){.scannerGrid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr)}}
+.videoBox{background:#0a0f0a;border-radius:16px;overflow:hidden;position:relative;min-height:220px;display:flex;align-items:center;justify-content:center;color:#a7b8a8;text-align:center;padding:12px}
+video{width:100%;height:260px;object-fit:cover;display:none;background:black}
+.scanLine{position:absolute;left:12%;right:12%;top:50%;height:2px;background:#4ade80;box-shadow:0 0 18px #4ade80;display:none}
+.btn{border:0;cursor:pointer;border-radius:999px;padding:12px 18px;font-weight:700;display:inline-flex;align-items:center;gap:8px;justify-content:center}
+.btn-primary{background:var(--text);color:var(--bg)}
+.btn-green{background:var(--green);color:white}
+.btn-outline{background:transparent;border:1.5px solid var(--line);color:var(--text)}
+.btn-sm{padding:8px 12px;font-size:14px}
+.input{width:100%;padding:13px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--text)}
+label{font-size:13px;font-weight:700;letter-spacing:.02em}
+.field{margin-bottom:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+@media(max-width:820px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:18px;box-shadow:var(--shadow)}
+.card h2{margin:0 0 6px;font-size:19px}
+.card h3{margin:0 0 8px}
+.muted{color:var(--muted);font-size:14px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+.chip{padding:8px 13px;border-radius:999px;border:1.5px solid var(--line);background:var(--surface);cursor:pointer;font-weight:600;font-size:14px}
+.chip.active{background:var(--text);color:var(--bg);border-color:var(--text)}
+.items{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+.item{border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--surface);display:flex;flex-direction:column;gap:10px}
+.itemTop{display:flex;gap:12px}
+.thumb{width:56px;height:56px;border-radius:12px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:26px;overflow:hidden;flex-shrink:0}
+.thumb img{width:100%;height:100%;object-fit:cover}
+.qtyRow{display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border-radius:999px;padding:5px}
+.qtyBtn{width:38px;height:38px;border-radius:50%;border:0;background:white;box-shadow:0 1px 6px rgba(0,0,0,.12);font-size:20px;cursor:pointer;display:grid;place-items:center;color:#111}
+@media(prefers-color-scheme:dark){.qtyBtn{background:#2e3a2f;color:white}}
+.qtyInput{width:56px;text-align:center;border:0;background:transparent;font-weight:800;font-size:18px;color:var(--text)}
+.badge{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:4px 7px;border-radius:999px;background:var(--green-light);color:var(--green)}
+.badge.low{background:var(--red-bg);color:var(--red)}
+.log{list-style:none;margin:0;padding:0}
+.log li{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+.toast{position:fixed;left:50%;transform:translateX(-50%) translateY(20px);bottom:18px;background:#17211a;color:white;padding:13px 16px;border-radius:999px;font-weight:700;box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:.25s;z-index:50;max-width:92vw;text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+pre{background:#0f1a12;color:#d1fae5;padding:14px;border-radius:12px;overflow:auto;font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+details{border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--surface)}
+summary{cursor:pointer;font-weight:800}
+.kbd{font-family:monospace;background:var(--surface2);padding:2px 6px;border-radius:6px}
+.empty{border:1.5px dashed var(--line);border-radius:16px;padding:28px;text-align:center;background:var(--surface)}
+.oauthDivider{display:flex;align-items:center;gap:12px;margin:18px 0 12px;color:var(--muted);font-size:13px;font-weight:600}
+.oauthDivider::before,.oauthDivider::after{content:"";flex:1;height:1px;background:var(--line)}
+.oauthGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:520px){.oauthGrid{grid-template-columns:1fr}}
+.oauthBtn{border-radius:12px;padding:13px 14px;font-weight:700;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;transition:opacity .15s,transform .1s}
+.oauthBtn:active{transform:scale(.99)}
+.oauthBtn:disabled{opacity:.55;cursor:not-allowed}
+.oauthBtn-google{background:#fff;color:#1f1f1f;border:1.5px solid #dadce0}
+.oauthBtn-google:hover{border-color:#bdc1c6;background:#f8f9fa}
+.oauthBtn-apple{background:#000;color:#fff;border:1.5px solid #000}
+.oauthBtn-apple:hover{opacity:.88}
+@media(prefers-color-scheme:dark){.oauthBtn-apple{background:#fff;color:#000;border-color:#fff}.oauthBtn-google{background:#fff;color:#1f1f1f}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <div class="eyebrow">Household • Groceries</div>
+      <h1>What’s in the house?</h1>
+      <p class="sub">Scan once at home to build your list, then scan at the store as you buy. Every scan is <strong>+1 or −1</strong> — tap the quantity anytime to fix it.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+      <span class="pill" id="connPill"><span class="dot" id="connDot"></span> <span id="connPillText">Preview mode — connect Supabase below to share live</span></span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-outline btn-sm" onclick="exportJSON()">Export list</button>
+        <label class="btn btn-outline btn-sm" style="cursor:pointer">Import <input type="file" accept=".json" hidden onchange="importJSON(event)"></label>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><b id="statDistinct">0</b><span>different items</span></div>
+    <div class="stat"><b id="statUnits">0</b><span>total units at home</span></div>
+    <div class="stat"><b id="statLow">0</b><span>running low (0–1 left)</span></div>
+  </div>
+
+  <!-- SCANNER -->
+  <section class="modeWrap" aria-label="Scanner">
+    <div class="modeToggle" role="tablist">
+      <button id="btnIn" class="modeBtn active-in" onclick="setMode('in')">⬆ &nbsp;SCAN IN &nbsp;·&nbsp; +1</button>
+      <button id="btnOut" class="modeBtn" onclick="setMode('out')">⬇ &nbsp;SCAN OUT &nbsp;·&nbsp; −1 &nbsp;<span style="font-weight:400;font-size:13px">use / finish</span></button>
+    </div>
+    <p id="modeHint" class="muted" style="margin:10px 2px 0">You’re scanning <strong style="color:var(--green)">IN</strong> — perfect for the first big shop at home and for scanning at the store checkout.</p>
+
+    <div class="scannerGrid">
+      <div>
+        <div class="videoBox">
+          <div id="camPlaceholder">
+            <div style="font-size:36px">▦</div>
+            <p style="margin:6px 0 2px;font-weight:700;color:white">Camera scanner</p>
+            <p style="margin:0;font-size:13px">Point at any grocery barcode.<br>Works best in good light.</p>
+          </div>
+          <video id="video" playsinline></video>
+          <div id="scanLine" class="scanLine"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button id="startBtn" class="btn btn-green" style="flex:1" onclick="startScanner()">Start camera scan</button>
+          <button id="stopBtn" class="btn btn-outline" style="display:none" onclick="stopScanner()">Stop</button>
+        </div>
+        <p class="muted" style="font-size:13px">No camera? Type the barcode below — or use a Bluetooth barcode scanner (it types like a keyboard).</p>
+      </div>
+
+      <div>
+        <div class="field">
+          <label for="barcodeInput">Barcode (EAN / UPC)</label>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <input id="barcodeInput" class="input" inputmode="numeric" placeholder="e.g. 3017620422003" onkeydown="if(event.key==='Enter') handleManualBarcode()">
+            <button class="btn btn-primary" onclick="handleManualBarcode()">Lookup</button>
+          </div>
+          <p class="muted" style="margin:6px 0 0">We look it up on <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> automatically. If it’s not there, you name it once and it’s remembered next time.</p>
+        </div>
+        <div id="lookupCard" style="display:none;background:var(--surface2);border-radius:14px;padding:12px">
+          <div style="display:flex;gap:12px;align-items:center">
+            <img id="lookupImg" alt="" style="width:52px;height:52px;object-fit:cover;border-radius:10px;background:white;display:none">
+            <div>
+              <div id="lookupName" style="font-weight:800;line-height:1.2"></div>
+              <div id="lookupBrand" class="muted"></div>
+              <div id="lookupBarcode" class="muted" style="font-family:monospace;font-size:12px"></div>
+            </div>
+          </div>
+          <button class="btn btn-green btn-sm" style="margin-top:10px;width:100%" onclick="confirmLookup()">Confirm — add with current mode</button>
+        </div>
+        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:11px 12px;margin-top:10px" id="tipBox">
+          <strong style="font-size:14px">💡 First-time tip:</strong> <span style="font-size:14px">Start in the pantry, work shelf by shelf. Scan everything you already have — dupes just stack the quantity.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INVENTORY + SIDE -->
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:22px">
+    <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-size:24px">Your inventory</h2>
+    <input id="search" class="input" style="max-width:320px" placeholder="Search milk, pasta, eggs…" oninput="render()">
+  </div>
+  <div class="toolbar" id="filters">
+    <button class="chip active" data-f="all" onclick="setFilter('all',this)">All</button>
+    <button class="chip" data-f="low" onclick="setFilter('low',this)">Running low</button>
+    <button class="chip" data-f="Pantry" onclick="setFilter('Pantry',this)">Pantry</button>
+    <button class="chip" data-f="Fridge" onclick="setFilter('Fridge',this)">Fridge</button>
+    <button class="chip" data-f="Freezer" onclick="setFilter('Freezer',this)">Freezer</button>
+    <button class="chip" data-f="Other" onclick="setFilter('Other',this)">Other</button>
+  </div>
+
+  <div id="itemsWrap"></div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Add manually</h2>
+      <p class="muted">No barcode, no match, or bulk item? Add it here — barcode is optional.</p>
+      <form onsubmit="addManual(event)">
+        <div class="field"><label>Product name *</label><input id="mName" class="input" required placeholder="e.g. Oat Milk 1L"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="field"><label>Brand</label><input id="mBrand" class="input" placeholder="Optional"></div>
+          <div class="field"><label>Barcode</label><input id="mBarcode" class="input" placeholder="Optional"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="field"><label>Quantity</label><input id="mQty" type="number" min="0" value="1" class="input"></div>
+          <div class="field"><label>Where is it?</label>
+            <select id="mLoc" class="input"><option>Pantry</option><option>Fridge</option><option>Freezer</option><option>Other</option></select>
+          </div>
+        </div>
+        <button class="btn btn-primary" style="width:100%">Add to inventory</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Recent activity</h2>
+      <p class="muted">Every scan and edit, newest first — also written to the shared Supabase log when you’re signed in.</p>
+      <ul id="logList" class="log"><li class="muted">No scans yet — try scanning a barcode above.</li></ul>
+      <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+      <h3>Share &amp; back up</h3>
+      <p class="muted">Signed in below, your list lives in Supabase and is shared with the household. In preview mode it’s kept only while this tab is open — export a JSON backup anytime either way.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="exportJSON()">Download backup (.json)</button>
+        <button class="btn btn-outline btn-sm" onclick="copyList()">Copy shopping-style list</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUPABASE SETUP -->
+  <div class="card" style="margin-top:16px">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;align-items:start">
+      <div>
+        <h2 style="font-family:'Bricolage Grotesque',sans-serif">Sign in to the shared list</h2>
+        <p class="muted" style="max-width:640px">The shared list lives in Supabase, and the connection to it is built into this app by the owner. Sign in with Google, Apple, or your email and password — there’s nothing else to set up, no URL or key to paste, ever.</p>
+      </div>
+      <span class="badge" id="sbBadge">Not signed in</span>
+    </div>
+
+    <div id="sbSetupFields">
+    <p class="muted" style="margin:0 0 12px"><strong style="color:var(--text)">Owner setup — one time only.</strong> This copy of the app doesn’t have the household connection built in yet, so the fields below are showing. Paste the Project URL and publishable key once (from Supabase → <span class="kbd">Connect</span>, or Settings → API Keys — the <span class="kbd">publishable</span> key, <span class="kbd">sb_publishable_…</span>, never the secret key) and connect. In the copy you share with the household (e.g. on GitHub Pages), paste the same two values once into the clearly marked <span class="kbd">SB_BUILT_IN</span> spot near the top of this file’s script — from then on these fields disappear for everyone and sign-in is all anyone sees. To invite people: in Supabase → Authentication, add or invite each household member by email.</p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="field"><label>Supabase Project URL</label><input id="sbUrl" class="input" placeholder="https://xxxx.supabase.co" autocomplete="off"></div>
+      <div class="field"><label>Supabase publishable key</label><input id="sbKey" class="input" placeholder="sb_publishable_…" autocomplete="off"></div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:2px 0 14px">
+      <label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:14px;line-height:1.4">
+        <input type="checkbox" id="sbRemember" style="width:18px;height:18px;margin-top:2px;flex-shrink:0;accent-color:var(--green)">
+        <span><strong>Save URL &amp; key on this device</strong><br><span class="muted" style="font-weight:400">So you don’t have to paste them again next time you open the app on this phone / browser. Only the Project URL and publishable key are saved — never your password, and never the secret key.</span></span>
+      </label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+        <button type="button" class="btn btn-primary btn-sm" onclick="saveSbConfig(true)">Save URL &amp; key</button>
+        <button type="button" class="btn btn-outline btn-sm" id="sbForgetBtn" style="display:none" onclick="clearSavedSbConfig(true)">Forget saved URL &amp; key</button>
+        <span id="sbSavedNote" class="muted" style="font-size:13px">Nothing saved on this device yet.</span>
+      </div>
+    </div>
+    </div><!-- /sbSetupFields -->
+
+    <!-- Social sign-in (Supabase OAuth) -->
+    <div id="oauthSection">
+      <div class="oauthGrid" role="group" aria-label="Sign in with Google or Apple">
+        <button type="button" class="oauthBtn oauthBtn-google" id="btnGoogle" onclick="signInWithProvider('google')">
+          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.3-2.2H12v4.3h6.5a5.6 5.6 0 0 1-2.4 3.7v3h3.9c2.3-2.1 3.5-5.2 3.5-8.8z"/><path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-3.9-3c-1.1.7-2.5 1.2-4 1.2-3.1 0-5.7-2.1-6.6-4.9H1.3v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.4 14.4a7.2 7.2 0 0 1 0-4.8V6.5H1.3a12 12 0 0 0 0 11l4.1-3.1z"/><path fill="#EA4335" d="M12 4.7c1.8 0 3 .8 3.7 1.4l3.3-3.2C17.9 1.1 15.2 0 12 0A12 12 0 0 0 1.3 6.5l4.1 3.1C6.3 6.8 8.9 4.7 12 4.7z"/></svg>
+          Continue with Google
+        </button>
+        <button type="button" class="oauthBtn oauthBtn-apple" id="btnApple" onclick="signInWithProvider('apple')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M17.05 12.54c0-2.4 1.96-3.55 2.05-3.6-1.12-1.64-2.86-1.86-3.48-1.89-1.48-.15-2.89.87-3.64.87-.75 0-1.9-.85-3.13-.83-1.61.02-3.1.94-3.93 2.38-1.68 2.9-.43 7.2 1.2 9.56.8 1.16 1.75 2.46 3 2.41 1.2-.05 1.66-.78 3.12-.78s1.87.78 3.14.76c1.3-.02 2.12-1.18 2.92-2.34.92-1.35 1.3-2.65 1.32-2.72-.03-.01-2.54-.98-2.57-3.82ZM14.65 5.4c.66-.8 1.1-1.91.98-3.02-.95.04-2.1.63-2.78 1.43-.61.71-1.15 1.84-1 2.9 1.06.08 2.14-.54 2.8-1.31Z"/></svg>
+          Continue with Apple
+        </button>
+      </div>
+      <p class="muted" style="font-size:13px;margin:8px 0 0">Use the same Google or Apple account the owner invited. You’ll be sent to Google / Apple to approve, then brought straight back here signed in.</p>
+      <div class="oauthDivider"><span>or sign in with email</span></div>
+    </div>
+
+    <div class="field"><label>Your email</label><input id="sbEmail" class="input" type="email" placeholder="you@example.com" autocomplete="username"></div>
+    <div class="field"><label>Your password</label><input id="sbPass" class="input" type="password" placeholder="Your Supabase account password" autocomplete="current-password" onkeydown="if(event.key==='Enter') connectSupabase()"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-green" id="sbConnectBtn" onclick="connectSupabase()">Connect &amp; sign in</button>
+      <button class="btn btn-outline" id="sbSignOutBtn" style="display:none" onclick="signOutSupabase()">Sign out</button>
+      <span id="sbStatus" class="muted">Not signed in yet — use Google, Apple, or your email and password. Your password is never saved.</span>
+    </div>
+    <div style="margin-top:10px">
+      <button type="button" class="btn btn-outline btn-sm" id="sbOwnerLink" style="display:none" onclick="toggleSbSetup()">Owner: connection settings</button>
+    </div>
+    <p class="muted" style="margin:10px 0 0">No account yet? Ask the owner to add you in Supabase → <strong>Authentication → Users</strong> (or invite you by email). For Google / Apple, sign in with the Google or Apple account that matches that email — see the owner setup below to switch those providers on first. Once signed in, every scan, quantity edit, and removal syncs to the shared list, and the list reloads from Supabase each time you sign in.</p>
+
+    <details style="margin-top:16px">
+      <summary>Owner setup — turn on Google &amp; Apple sign-in (one time, in Supabase)</summary>
+      <div class="muted" style="font-size:14px;line-height:1.6">
+        <p style="margin:10px 0 6px"><strong style="color:var(--text)">Both providers — first:</strong> In Supabase → <span class="kbd">Authentication → URL Configuration</span>, set <strong>Site URL</strong> to the address where this app lives (e.g. your GitHub Pages URL, or this app’s address) and add that same address under <strong>Redirect URLs</strong> (add <span class="kbd">/**</span> on the end if Supabase asks for a pattern). The buttons rely on this: after approving at Google / Apple, Supabase sends people back to the Site URL, where this app picks up the sign-in automatically. Without this, they’ll be sent back to the wrong place.</p>
+        <p style="margin:8px 0 6px"><strong style="color:var(--text)">Google:</strong></p>
+        <ol style="margin:4px 0 8px;padding-left:20px">
+          <li>In <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console → APIs &amp; Services → Credentials</a>, create an <strong>OAuth client ID</strong> (Web application). If asked, configure the consent screen first (app name + your email is enough).</li>
+          <li>Under <strong>Authorized redirect URIs</strong> on that client, paste the callback shown in Supabase (next step) — it looks like <span class="kbd">https://&lt;your-project&gt;.supabase.co/auth/v1/callback</span>.</li>
+          <li>In Supabase → <span class="kbd">Authentication → Providers → Google</span>, switch it <strong>on</strong> and paste the Google <strong>Client ID</strong> and <strong>Client Secret</strong>. Save.</li>
+        </ol>
+        <p style="margin:8px 0 6px"><strong style="color:var(--text)">Apple:</strong></p>
+        <ol style="margin:4px 0 8px;padding-left:20px">
+          <li>You need a paid Apple Developer account. In <a href="https://developer.apple.com/account/resources/identifiers/list" target="_blank" rel="noopener">Apple Developer → Certificates, Identifiers &amp; Profiles → Identifiers</a>, create an <strong>App ID</strong> and a <strong>Services ID</strong> with <strong>Sign in with Apple</strong> enabled. On the Services ID, set the Return URL to the same Supabase callback: <span class="kbd">https://&lt;your-project&gt;.supabase.co/auth/v1/callback</span>.</li>
+          <li>Create a <strong>Sign in with Apple key</strong> (.p8) under Keys, and note the Key ID and your Team ID.</li>
+          <li>In Supabase → <span class="kbd">Authentication → Providers → Apple</span>, switch it <strong>on</strong> and fill in the Services ID (Client ID), Team ID, Key ID, and the .p8 key contents (Supabase generates the secret from these). Save.</li>
+        </ol>
+        <p style="margin:8px 0 0">Then test each button once yourself. If a button returns an error like “provider is not enabled”, that provider hasn’t been switched on in Supabase yet — email/password still works in the meantime. Apple also requires the app to be served over <strong>https</strong> (GitHub Pages and this app both are).</p>
+      </div>
+    </details>
+
+    <details style="margin-top:16px">
+      <summary>SQL schema — copy &amp; run in Supabase</summary>
+      <pre id="sqlBlock">create table if not exists public.inventory_items (
+  id uuid primary key default gen_random_uuid(),
+  barcode text unique not null,
+  name text not null,
+  brand text,
+  image_url text,
+  quantity integer not null default 0 check (quantity &gt;= 0),
+  location text not null default 'Pantry',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  updated_by uuid references auth.users(id)
+);
+create table if not exists public.inventory_log (
+  id bigint generated always as identity primary key,
+  barcode text, item_name text, delta integer, mode text,
+  user_id uuid references auth.users(id),
+  created_at timestamptz default now()
+);
+alter table public.inventory_items enable row level security;
+alter table public.inventory_log enable row level security;
+-- Household policy: any signed-in user can read/write (tighten later if needed)
+create policy "household read" on public.inventory_items for select to authenticated using (true);
+create policy "household write" on public.inventory_items for all to authenticated using (true) with check (true);
+create policy "log read" on public.inventory_log for select to authenticated using (true);
+create policy "log write" on public.inventory_log for insert to authenticated with check (true);</pre>
+      <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('sqlBlock').innerText); showToast('SQL copied — paste it in Supabase SQL Editor')">Copy SQL</button>
+    </details>
+
+    <details style="margin-top:10px">
+      <summary>How scanning works in the live version</summary>
+      <p class="muted">Scan → barcode decoded on the phone → Open Food Facts lookup for name/photo → quantity ±1 saved to Supabase → anyone else signed in sees it when they connect or refresh. If Open Food Facts has no match, the first person types the name once; it’s saved against that barcode for everyone after that.</p>
+    </details>
+  </div>
+
+  <p class="muted" style="text-align:center;margin-top:18px;font-size:13px">Built for the house — scan in at home, scan in at the store, scan out when you use it. Quantities are always editable.</p>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+let state = { items: [], logs: [], mode:'in', filter:'all' };
+let sb = null;          // Supabase client (auth), created on Connect
+let sbUser = null;      // signed-in user; null = preview mode
+let sbConfig = null;    // { url, key } in use for this session
+let sbAccessToken = null; // signed-in session access_token — used as Bearer for all REST calls so RLS (authenticated only) passes
+
+/* ===== HOUSEHOLD CONNECTION — built in by the owner, once =====
+   OWNER: paste your Supabase Project URL and publishable key between
+   the quotes below — once — in the copy of this file you share with
+   the household (e.g. the one on GitHub Pages). Everyone opening that
+   copy then just signs in with their email and password: the URL/key
+   fields never appear for them.
+   • Use the PUBLISHABLE key (sb_publishable_…). NEVER the secret key:
+     Supabase blocks secret keys in browsers, and one must never ship
+     inside a page anyone can open.
+   • While these are empty (like in this preview), the app falls back
+     to the URL & key the owner pastes in the setup fields below, or
+     saved on this device — so the owner can connect first, then fill
+     this in for the shared copy. */
+const SB_BUILT_IN = { url: '', key: '' };
+
+function builtinSbConfig(){
+  const url = (https://cawzgipfkkqnhiwzrupo.supabase.co
+ || '').trim().replace(/\/$/, '');
+  const key = (sb_publishable_gpoxZIh_Y6w86s99D_hsOQ_SIpQIAU0 || '').trim();
+  if(url && key && key.indexOf('sb_secret_') !== 0) return { url: url, key: key };
+  return null;
+}
+function hasSavedSbConfig(){
+  try{ const raw = localStorage.getItem(SB_STORE_KEY); if(!raw) return false; const s = JSON.parse(raw); return !!(s && s.url && s.key); }catch(e){ return false; }
+}
+function sbIsConfigured(){ return !!builtinSbConfig() || hasSavedSbConfig(); }
+function toggleSbSetup(){
+  const el = document.getElementById('sbSetupFields');
+  if(!el) return;
+  el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+}
+function applySbVisibility(){
+  const configured = sbIsConfigured();
+  const setup = document.getElementById('sbSetupFields');
+  if(setup) setup.style.display = configured ? 'none' : 'block';
+  const ownerLink = document.getElementById('sbOwnerLink');
+  if(ownerLink) ownerLink.style.display = configured ? 'inline-flex' : 'none';
+  if(configured && !sbUser){
+    const st = document.getElementById('sbStatus');
+    if(st && (st.textContent.indexOf('Not signed in') === 0 || st.textContent.indexOf('Not connected') === 0)){
+      st.textContent = 'This copy is already connected to your household’s Supabase project — just sign in with Google, Apple, or your email and password. No URL or key needed, and your password is never saved.';
+    }
+    const pillText = document.getElementById('connPillText');
+    if(pillText && pillText.textContent.indexOf('Preview mode') === 0) pillText.textContent = 'Shared list — sign in below to sync';
+  }
+}
+
+/* ===== Save URL & key on this device (opt-in) =====
+   Only the Project URL + publishable key are ever stored, in this
+   browser's local storage, and only when the user ticks Save.
+   Password, email password, secret key, and inventory data are
+   never saved here — inventory lives in Supabase. */
+const SB_STORE_KEY = 'household-inventory-sb-config-v1';
+function updateSavedNote(){
+  const note = document.getElementById('sbSavedNote');
+  const forgetBtn = document.getElementById('sbForgetBtn');
+  const remember = document.getElementById('sbRemember');
+  if(!note) return;
+  let saved = null;
+  try{ const raw = localStorage.getItem(SB_STORE_KEY); if(raw) saved = JSON.parse(raw); }catch(e){}
+  if(saved && saved.url){
+    note.textContent = '✓ Saved on this device: ' + saved.url + ' — it will auto-fill next time.';
+    if(forgetBtn) forgetBtn.style.display = 'inline-flex';
+    if(remember) remember.checked = true;
+  }else{
+    note.textContent = 'Nothing saved on this device yet.';
+    if(forgetBtn) forgetBtn.style.display = 'none';
+  }
+}
+function saveSbConfig(showFeedback){
+  const urlEl = document.getElementById('sbUrl');
+  const keyEl = document.getElementById('sbKey');
+  const remember = document.getElementById('sbRemember');
+  const url = (urlEl.value || '').trim().replace(/\/$/, '');
+  const key = (keyEl.value || '').trim();
+  if(!url || !key){
+    if(showFeedback) showToast('Paste both the Project URL and publishable key first, then Save');
+    const st = document.getElementById('sbStatus');
+    if(st && showFeedback) st.textContent = 'Paste both the Project URL and the publishable key first, then press Save URL & key.';
+    return false;
+  }
+  if(key.indexOf('sb_secret_') === 0){
+    if(showFeedback) showToast('That’s the secret key — don’t save it. Use the publishable key instead.');
+    const st = document.getElementById('sbStatus');
+    if(st) st.textContent = 'That’s the secret key — it must never be saved or used in a browser. Use the publishable key (sb_publishable_…) instead.';
+    return false;
+  }
+  try{
+    localStorage.setItem(SB_STORE_KEY, JSON.stringify({ url: url, key: key, savedAt: new Date().toISOString() }));
+  }catch(e){
+    if(showFeedback) showToast('Couldn’t save on this device — your browser blocked local storage');
+    return false;
+  }
+  if(remember) remember.checked = true;
+  updateSavedNote();
+  if(showFeedback){
+    showToast('URL & key saved on this device');
+    const st = document.getElementById('sbStatus');
+    if(st) st.textContent = '✓ URL & key saved on this device — they’ll auto-fill next time you open the app here. Your password was not saved.';
+  }
+  return true;
+}
+function clearSavedSbConfig(showFeedback){
+  try{ localStorage.removeItem(SB_STORE_KEY); }catch(e){}
+  const remember = document.getElementById('sbRemember');
+  if(remember) remember.checked = false;
+  updateSavedNote();
+  if(showFeedback){
+    showToast('Saved URL & key forgotten on this device');
+    const st = document.getElementById('sbStatus');
+    if(st) st.textContent = 'Saved URL & key removed from this device. The fields above still hold what you typed for this session — clear them manually if you want them gone now too.';
+  }
+}
+function loadSavedSbConfig(){
+  let saved = null;
+  try{ const raw = localStorage.getItem(SB_STORE_KEY); if(raw) saved = JSON.parse(raw); }catch(e){}
+  if(saved && saved.url && saved.key){
+    const urlEl = document.getElementById('sbUrl');
+    const keyEl = document.getElementById('sbKey');
+    if(urlEl && !urlEl.value) urlEl.value = saved.url;
+    if(keyEl && !keyEl.value) keyEl.value = saved.key;
+    sbConfig = { url: saved.url, key: saved.key };
+  }
+  updateSavedNote();
+}
+
+/* ===== Supabase live sync ===== */
+async function sbRefreshAccessToken(){
+  if(sb){
+    try{
+      const r = await sb.auth.getSession();
+      if(r && r.data && r.data.session && r.data.session.access_token){
+        sbAccessToken = r.data.session.access_token;
+        if(r.data.session.user) sbUser = r.data.session.user;
+      }
+    }catch(e){}
+  }
+  return sbAccessToken;
+}
+function sbHeaders(extra){
+  // apikey stays the publishable key; Authorization must be the signed-in
+  // session token, NOT the publishable key — the tables' RLS policies only
+  // allow role `authenticated`, and the publishable key alone is `anon`.
+  const bearer = sbAccessToken || '';
+  const h = { apikey: sbConfig.key, Authorization: 'Bearer ' + bearer, 'Content-Type': 'application/json' };
+  return Object.assign(h, extra || {});
+}
+function rowToItem(r){
+  return { id: r.id, barcode: r.barcode, name: r.name, brand: r.brand || '', image: r.image_url || '', qty: r.quantity, location: r.location || 'Pantry' };
+}
+function itemToRow(i){
+  return { barcode: i.barcode, name: i.name, brand: i.brand || null, image_url: i.image || null, quantity: Math.max(0, i.qty), location: i.location || 'Pantry', updated_at: new Date().toISOString(), updated_by: sbUser ? sbUser.id : null };
+}
+async function sbLoadItems(){
+  await sbRefreshAccessToken();
+  const res = await fetch(sbConfig.url + '/rest/v1/inventory_items?select=*&order=updated_at.desc', { headers: sbHeaders() });
+  if(!res.ok) throw new Error('load ' + res.status);
+  const rows = await res.json();
+  state.items = rows.map(rowToItem);
+  render();
+}
+async function sbLoadLogs(){
+  try{
+    await sbRefreshAccessToken();
+    const res = await fetch(sbConfig.url + '/rest/v1/inventory_log?select=item_name,delta,created_at&order=created_at.desc&limit=12', { headers: sbHeaders() });
+    if(!res.ok) return;
+    const rows = await res.json();
+    if(rows.length){
+      state.logs = rows.map(r => ({ msg: r.item_name || 'Item', time: new Date(r.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), delta: r.delta }));
+      renderLog();
+    }
+  }catch(e){}
+}
+async function sbUpsertItem(item){
+  if(!sbUser) return;
+  try{
+    await sbRefreshAccessToken();
+    const res = await fetch(sbConfig.url + '/rest/v1/inventory_items?on_conflict=barcode', {
+      method: 'POST',
+      headers: sbHeaders({ Prefer: 'resolution=merge-duplicates,return=representation' }),
+      body: JSON.stringify(itemToRow(item))
+    });
+    if(!res.ok) throw new Error('upsert ' + res.status);
+    const rows = await res.json();
+    if(rows && rows[0] && rows[0].id) item.id = rows[0].id;
+  }catch(e){ showToast('Saved here, but Supabase sync failed — check your connection'); }
+}
+async function sbDeleteItem(item){
+  if(!sbUser) return;
+  try{
+    await sbRefreshAccessToken();
+    await fetch(sbConfig.url + '/rest/v1/inventory_items?barcode=eq.' + encodeURIComponent(item.barcode), { method: 'DELETE', headers: sbHeaders() });
+  }catch(e){}
+}
+async function sbWriteLog(item, delta){
+  if(!sbUser) return;
+  try{
+    await sbRefreshAccessToken();
+    await fetch(sbConfig.url + '/rest/v1/inventory_log', {
+      method: 'POST',
+      headers: sbHeaders({ Prefer: 'return=minimal' }),
+      body: JSON.stringify({ barcode: item.barcode, item_name: item.name, delta: delta, mode: state.mode, user_id: sbUser.id })
+    });
+  }catch(e){}
+}
+function setConnUI(mode, email){
+  const pillText = document.getElementById('connPillText');
+  const dot = document.getElementById('connDot');
+  const badge = document.getElementById('sbBadge');
+  if(mode === 'live'){
+    pillText.textContent = 'Live — signed in as ' + email + ' · syncing to Supabase';
+    dot.style.background = '#22c55e';
+    badge.textContent = 'Connected · live sync on';
+    document.getElementById('sbSignOutBtn').style.display = 'inline-flex';
+    document.getElementById('sbConnectBtn').textContent = 'Reconnect';
+  }else{
+    pillText.textContent = sbIsConfigured() ? 'Shared list — sign in below to sync' : 'Preview mode — owner setup below to share live';
+    dot.style.background = '#f59e0b';
+    badge.textContent = 'Not signed in';
+    document.getElementById('sbSignOutBtn').style.display = 'none';
+    document.getElementById('sbConnectBtn').textContent = 'Connect & sign in';
+  }
+}
+/* ===== Google & Apple sign-in (Supabase OAuth) ===== */
+function getEffectiveSbConfig(){
+  const built = builtinSbConfig();
+  if(built) return built;
+  try{ const raw = localStorage.getItem(SB_STORE_KEY); if(raw){ const s = JSON.parse(raw); if(s && s.url && s.key && String(s.key).indexOf('sb_secret_') !== 0) return { url: String(s.url).replace(/\/$/, ''), key: s.key }; } }catch(e){}
+  const urlEl = document.getElementById('sbUrl');
+  const keyEl = document.getElementById('sbKey');
+  const fUrl = urlEl ? urlEl.value.trim().replace(/\/$/, '') : '';
+  const fKey = keyEl ? keyEl.value.trim() : '';
+  if(fUrl && fKey && fKey.indexOf('sb_secret_') !== 0) return { url: fUrl, key: fKey };
+  return null;
+}
+/* No redirectTo is passed to Supabase OAuth on purpose: Supabase sends
+   people back to the Site URL configured in Authentication → URL
+   Configuration (see Owner setup below), which the owner sets to this
+   app's address. That keeps this script free of any own-URL handling. */
+let sbCompleting = false;
+let sbLastCompletedToken = null;
+async function completeSignIn(session){
+  if(!session || !session.access_token || sbCompleting) return false;
+  if(sbLastCompletedToken === session.access_token && sbUser) return true;
+  sbCompleting = true;
+  const status = document.getElementById('sbStatus');
+  try{
+    sbAccessToken = session.access_token;
+    sbUser = session.user || sbUser;
+    if(!sbUser || !sbUser.email){
+      try{ const r = await sb.auth.getUser(); if(r && r.data && r.data.user) sbUser = r.data.user; }catch(e){}
+    }
+    const probe = await fetch(sbConfig.url + '/rest/v1/inventory_items?select=id&limit=1', { headers: sbHeaders() });
+    if(!probe.ok){ const t = await probe.text(); if(status) status.textContent = 'Signed in, but reached Supabase with ' + probe.status + '. ' + t.slice(0, 140) + ' — check you ran the SQL schema.'; return false; }
+    try{ await sbLoadItems(); await sbLoadLogs(); }catch(e){ if(status) status.textContent = 'Signed in, but loading the shared list failed — check the SQL schema was run.'; return false; }
+    sbLastCompletedToken = session.access_token;
+    const emailLabel = (sbUser && sbUser.email) ? sbUser.email : 'your account';
+    setConnUI('live', emailLabel);
+    let savedNote = '';
+    if(!builtinSbConfig()){ try{ if(localStorage.getItem(SB_STORE_KEY)) savedNote = ' URL & key are saved on this device for next time.'; }catch(e){} }
+    if(status) status.textContent = '✅ Live — signed in as ' + emailLabel + '. Scans and edits now save to the shared Supabase list.' + savedNote;
+    showToast('Connected — live sync on');
+    log('Connected to shared Supabase list', 0);
+    return true;
+  }catch(e){
+    if(status) status.textContent = 'Signed in, but could not reach the tables — check your connection.';
+    return false;
+  }finally{ sbCompleting = false; }
+}
+function ensureSbClient(cfg){
+  if(sb) { sbConfig = cfg; return sb; }
+  if(!(window.supabase && window.supabase.createClient)) return null;
+  sbConfig = cfg;
+  sb = window.supabase.createClient(cfg.url, cfg.key);
+  try{ sb.auth.onAuthStateChange(function(event, session){ if(session && session.access_token){ sbAccessToken = session.access_token; if(session.user) sbUser = session.user; if(event === 'SIGNED_IN' && !sbCompleting){ completeSignIn(session); } } }); }catch(e){}
+  return sb;
+}
+async function signInWithProvider(provider){
+  const status = document.getElementById('sbStatus');
+  const label = provider === 'apple' ? 'Apple' : 'Google';
+  const btnG = document.getElementById('btnGoogle');
+  const btnA = document.getElementById('btnApple');
+  const cfg = getEffectiveSbConfig();
+  if(!cfg){
+    // Secret-key guard for the field fallback
+    const keyEl = document.getElementById('sbKey');
+    if(keyEl && keyEl.value.trim().indexOf('sb_secret_') === 0){ if(status) status.textContent = 'That’s the secret key — Supabase blocks it in browsers. Use the publishable key (sb_publishable_…) instead.'; return; }
+    if(status) status.textContent = 'This copy isn’t set up yet — the owner needs to add the household connection first (see Owner setup above) before Google / Apple sign-in can work.';
+    showToast('Owner setup needed first');
+    return;
+  }
+  if(!(window.supabase && window.supabase.createClient)){ if(status) status.textContent = 'The sign-in library didn’t load — check your connection and reload the page.'; return; }
+  const rememberEl = document.getElementById('sbRemember');
+  if(rememberEl && rememberEl.checked){ saveSbConfig(false); }
+  if(!ensureSbClient(cfg)){ if(status) status.textContent = 'Could not start sign-in — reload the page and try again.'; return; }
+  if(btnG) btnG.disabled = true;
+  if(btnA) btnA.disabled = true;
+  if(status) status.textContent = 'Taking you to ' + label + ' to sign in… approve there and you’ll be brought back here signed in.';
+  try{
+    const opts = {};
+    if(provider === 'google') opts.queryParams = { prompt: 'select_account' };
+    const result = await sb.auth.signInWithOAuth({ provider: provider, options: opts });
+    if(result && result.error){
+      if(btnG) btnG.disabled = false;
+      if(btnA) btnA.disabled = false;
+      const msg = result.error.message || '';
+      if(status) status.textContent = label + ' sign-in couldn’t start: ' + msg + (msg.toLowerCase().indexOf('provider') !== -1 || msg.toLowerCase().indexOf('enabled') !== -1 ? ' — the owner needs to switch ' + label + ' on in Supabase → Authentication → Providers (see Owner setup below).' : '');
+      return;
+    }
+    // On success the browser navigates away to Google / Apple; nothing else to do here.
+  }catch(e){
+    if(btnG) btnG.disabled = false;
+    if(btnA) btnA.disabled = false;
+    if(status) status.textContent = label + ' sign-in couldn’t start — check your connection and try again. If it keeps failing, the owner may still need to enable ' + label + ' in Supabase (see Owner setup below).';
+  }
+}
+async function initSbAuthFromReturn(){
+  const cfg = getEffectiveSbConfig();
+  if(!cfg) return;
+  if(!ensureSbClient(cfg)) return;
+  try{
+    const r = await sb.auth.getSession();
+    if(r && r.data && r.data.session && r.data.session.access_token){ await completeSignIn(r.data.session); }
+  }catch(e){}
+}
+
+async function connectSupabase(){
+  const email = document.getElementById('sbEmail').value.trim();
+  const pass = document.getElementById('sbPass').value;
+  const status = document.getElementById('sbStatus');
+  // Connection comes from the built-in household config first — that's
+  // what everyone else's copy uses, so they only ever type email +
+  // password. Only the owner's not-yet-configured copy falls back to
+  // the setup fields.
+  let cfg = builtinSbConfig();
+  if(!cfg){
+    const fUrl = document.getElementById('sbUrl').value.trim().replace(/\/$/, '');
+    const fKey = document.getElementById('sbKey').value.trim();
+    if(fKey.indexOf('sb_secret_') === 0){ status.textContent = 'That’s the secret key — Supabase blocks it in browsers. Use the publishable key (sb_publishable_…) instead.'; return; }
+    if(fUrl && fKey) cfg = { url: fUrl, key: fKey };
+  }
+  if(!cfg){ status.textContent = 'This copy isn’t set up yet — the owner needs to add the household connection first (see Owner setup above).'; return; }
+  const url = cfg.url, key = cfg.key;
+  if(!email || !pass){ status.textContent = 'Add your email and password — the household policies only let signed-in users save to the shared list.'; return; }
+  status.textContent = 'Connecting…';
+  sbConfig = { url: url, key: key };
+  // Honour the Save tick: persist URL + publishable key for next time on this device.
+  const rememberEl = document.getElementById('sbRemember');
+  if(rememberEl && rememberEl.checked){ saveSbConfig(false); }
+  sbAccessToken = null;
+  if(!(window.supabase && window.supabase.createClient)){ status.textContent = 'The sign-in library didn’t load — check your connection and reload the page.'; sbConfig = null; return; }
+  // Reuse the shared client so the OAuth return handler and email sign-in share one session.
+  sb = null; ensureSbClient(cfg);
+  let auth;
+  try{ auth = await sb.auth.signInWithPassword({ email: email, password: pass }); }
+  catch(e){ status.textContent = 'Could not reach that URL — double-check the Project URL and your connection.'; sb = null; sbConfig = null; return; }
+  if(auth.error){ status.textContent = 'Sign-in failed: ' + auth.error.message + ' — check the email and password, or add your user in Supabase → Authentication → Users first.'; sb = null; sbConfig = null; return; }
+  if(!auth.data || !auth.data.session || !auth.data.session.access_token){ status.textContent = 'Sign-in did not return a session — try again, or check email confirmation in Supabase → Authentication.'; sb = null; sbConfig = null; return; }
+  if(auth.data.user) sbUser = auth.data.user;
+  // Probe + load + live UI all run through completeSignIn, with the session
+  // token as Bearer so RLS (authenticated only) passes — same path OAuth uses.
+  await completeSignIn(auth.data.session);
+}
+async function signOutSupabase(){
+  if(sb){ try{ await sb.auth.signOut(); }catch(e){} }
+  sb = null; sbUser = null; sbAccessToken = null; sbConfig = null; sbLastCompletedToken = null;
+  const btnG = document.getElementById('btnGoogle'); if(btnG) btnG.disabled = false;
+  const btnA = document.getElementById('btnApple'); if(btnA) btnA.disabled = false;
+  setConnUI('preview');
+  // Signing out ends the session only — it never removes the built-in
+  // connection or a URL & key saved on this device, so signing back in
+  // never needs setup again.
+  loadSavedSbConfig();
+  applySbVisibility();
+  if(sbIsConfigured()){
+    document.getElementById('sbStatus').textContent = 'Signed out. Sign back in anytime with Google, Apple, or your email and password — no setup needed. Until then, your list here is kept only while this tab is open.';
+  }else{
+    document.getElementById('sbStatus').textContent = 'Signed out — back to preview mode. Your list here is kept only while this tab is open.';
+  }
+  showToast('Signed out');
+}
+let pendingLookup = null;
+let codeReader = null;
+let scanning = false;
+
+function showToast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  if(navigator.vibrate) navigator.vibrate(30);
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2600);
+}
+function setMode(m){
+  state.mode=m;
+  document.getElementById('btnIn').className='modeBtn '+(m==='in'?'active-in':'');
+  document.getElementById('btnOut').className='modeBtn '+(m==='out'?'active-out':'');
+  document.getElementById('modeHint').innerHTML = m==='in'
+    ? 'You’re scanning <strong style="color:var(--green)">IN</strong> — perfect for the first big shop at home and for scanning at the store checkout.'
+    : 'You’re scanning <strong style="color:#dc2626">OUT</strong> — scan when you open, use, or finish something so the count drops by 1.';
+}
+function setFilter(f,el){
+  state.filter=f;
+  document.querySelectorAll('#filters .chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); render();
+}
+function log(msg, delta){
+  state.logs.unshift({msg, time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), delta});
+  renderLog();
+}
+function renderLog(){
+  const el=document.getElementById('logList');
+  if(!state.logs.length){ el.innerHTML='<li class="muted">No scans yet — try scanning a barcode above.</li>'; return;}
+  el.innerHTML=state.logs.slice(0,12).map(l=>`<li><span>${escapeHtml(l.msg)}</span><span class="muted">${l.time} ${l.delta? '· '+(l.delta>0?'+':'')+l.delta:''}</span></li>`).join('');
+}
+function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
+
+async function lookupOFF(barcode){
+  try{
+    const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`);
+    const j=await r.json();
+    if(j.status===1 && j.product){
+      const p=j.product;
+      return { barcode, name:p.product_name||p.product_name_en||'Unknown product', brand:p.brands||'', image:p.image_small_url||p.image_front_small_url||'', location:'Pantry' };
+    }
+  }catch(e){}
+  return null;
+}
+
+async function handleBarcode(barcode, source){
+  barcode=String(barcode).trim(); if(!barcode) return;
+  const existing=state.items.find(i=>i.barcode===barcode);
+  if(existing){
+    applyDelta(existing, state.mode==='in'?1:-1);
+    showToast(`${existing.name} — now ${existing.qty}`);
+    return;
+  }
+  // not in inventory yet
+  showToast('Looking up barcode…');
+  const found=await lookupOFF(barcode);
+  if(found){
+    pendingLookup=found;
+    document.getElementById('lookupCard').style.display='block';
+    document.getElementById('lookupName').textContent=found.name;
+    document.getElementById('lookupBrand').textContent=found.brand||'';
+    document.getElementById('lookupBarcode').textContent=barcode;
+    const img=document.getElementById('lookupImg');
+    if(found.image){ img.src=found.image; img.style.display='block'; } else img.style.display='none';
+    showToast('Found on Open Food Facts — confirm to add');
+  }else{
+    // fallback manual
+    document.getElementById('mBarcode').value=barcode;
+    document.getElementById('mName').focus();
+    document.getElementById('mName').placeholder='Not found — type the name once, we’ll remember it';
+    showToast('Not in Open Food Facts — add the name below once');
+    window.scrollTo({top: document.getElementById('mName').getBoundingClientRect().top + window.scrollY - 120, behavior:'smooth'});
+  }
+}
+async function confirmLookup(){
+  if(!pendingLookup) return;
+  const qty = state.mode==='in'?1:0;
+  const item={ id:Date.now().toString(), ...pendingLookup, qty };
+  state.items.unshift(item);
+  log(`${item.name} added`, qty);
+  pendingLookup=null; document.getElementById('lookupCard').style.display='none';
+  render(); showToast(`${item.name} added · qty ${qty}`);
+  await sbUpsertItem(item); sbWriteLog(item, qty); render();
+}
+function applyDelta(item, delta){
+  item.qty=Math.max(0, item.qty+delta);
+  log(`${item.name} ${delta>0?'scanned in':'scanned out'}`, delta);
+  render();
+  sbUpsertItem(item); sbWriteLog(item, delta);
+}
+function changeQty(id, delta){
+  const it=state.items.find(i=>i.id===id); if(!it) return; applyDelta(it, delta);
+}
+function setQty(id, val){
+  const it=state.items.find(i=>i.id===id); if(!it) return;
+  const n=parseInt(val,10); if(isNaN(n)) {render(); return;}
+  const diff=n-it.qty; it.qty=Math.max(0,n); log(`${it.name} quantity set to ${it.qty}`, diff); render(); sbUpsertItem(it); if(diff) sbWriteLog(it, diff);
+}
+function removeItem(id){
+  const it=state.items.find(i=>i.id===id); state.items=state.items.filter(i=>i.id!==id); log(`${it?it.name:'Item'} removed`,0); render(); if(it) sbDeleteItem(it);
+}
+function changeLoc(id, loc){ const it=state.items.find(i=>i.id===id); if(it){ it.location=loc; sbUpsertItem(it); } renderStats(); }
+
+function handleManualBarcode(){
+  const v=document.getElementById('barcodeInput').value; if(!v) return; handleBarcode(v,'manual'); document.getElementById('barcodeInput').value='';
+}
+async function addManual(e){
+  e.preventDefault();
+  const name=document.getElementById('mName').value.trim(); if(!name) return;
+  const barcode=document.getElementById('mBarcode').value.trim() || ('manual-'+Date.now());
+  const existing=state.items.find(i=>i.barcode===barcode);
+  const qty=parseInt(document.getElementById('mQty').value||'1',10);
+  let saved = existing;
+  if(existing){ existing.qty+=qty; log(`${existing.name} +${qty} (manual)`, qty); }
+  else{
+    saved = { id:Date.now().toString(), barcode, name, brand:document.getElementById('mBrand').value.trim(), qty, location:document.getElementById('mLoc').value, image:'' };
+    state.items.unshift(saved);
+    log(`${name} added manually`, qty);
+  }
+  e.target.reset(); document.getElementById('mQty').value=1; render(); showToast('Added to inventory');
+  if(saved){ await sbUpsertItem(saved); sbWriteLog(saved, qty); render(); }
+}
+
+async function startScanner(){
+  const video=document.getElementById('video');
+  document.getElementById('camPlaceholder').style.display='none'; video.style.display='block'; document.getElementById('scanLine').style.display='block';
+  document.getElementById('startBtn').style.display='none'; document.getElementById('stopBtn').style.display='inline-flex';
+  scanning=true;
+  // Prefer native BarcodeDetector if available
+  if('BarcodeDetector' in window){
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+      video.srcObject=stream; await video.play();
+      const detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});
+      const loop=async()=>{
+        if(!scanning) return;
+        try{ const codes=await detector.detect(video); if(codes && codes.length){ const code=codes[0].rawValue; stopScanner(); handleBarcode(code,'camera'); return; } }catch(e){}
+        requestAnimationFrame(loop);
+      }; loop(); return;
+    }catch(e){ /* fall through to ZXing */ }
+  }
+  if(window.ZXing){
+    try{
+      codeReader=new ZXing.BrowserMultiFormatReader();
+      const devices=await codeReader.listVideoInputDevices();
+      const deviceId=devices && devices.length ? devices[devices.length-1].deviceId : undefined;
+      await codeReader.decodeFromVideoDevice(deviceId,'video',(result,err)=>{
+        if(result){ const code=result.getText(); stopScanner(); handleBarcode(code,'camera'); }
+      });
+    }catch(e){ showToast('Camera not available — use manual barcode entry'); stopScanner(); }
+  }else{
+    showToast('Scanner library didn’t load — use manual entry'); stopScanner();
+  }
+}
+function stopScanner(){
+  scanning=false;
+  const video=document.getElementById('video');
+  if(video.srcObject){ video.srcObject.getTracks().forEach(t=>t.stop()); video.srcObject=null; }
+  if(codeReader){ try{codeReader.reset()}catch(e){} codeReader=null; }
+  video.style.display='none'; document.getElementById('camPlaceholder').style.display='block'; document.getElementById('scanLine').style.display='none';
+  document.getElementById('startBtn').style.display='inline-flex'; document.getElementById('stopBtn').style.display='none';
+}
+
+function renderStats(){
+  const distinct=state.items.length;
+  const units=state.items.reduce((a,i)=>a+i.qty,0);
+  const low=state.items.filter(i=>i.qty<=1).length;
+  document.getElementById('statDistinct').textContent=distinct;
+  document.getElementById('statUnits').textContent=units;
+  document.getElementById('statLow').textContent=low;
+}
+function render(){
+  renderStats();
+  const q=(document.getElementById('search').value||'').toLowerCase();
+  let list=state.items.filter(i=>{
+    if(state.filter==='low' && i.qty>1) return false;
+    if(['Pantry','Fridge','Freezer','Other'].includes(state.filter) && i.location!==state.filter) return false;
+    if(q && !(i.name.toLowerCase().includes(q)|| (i.brand||'').toLowerCase().includes(q) || i.barcode.includes(q))) return false;
+    return true;
+  });
+  const wrap=document.getElementById('itemsWrap');
+  if(!state.items.length){
+    wrap.innerHTML=`<div class="empty"><div style="font-size:34px">🧺</div><h3 style="margin:8px 0 4px">Your list is empty — ready for the first big scan-in</h3><p class="muted" style="max-width:480px;margin:0 auto">Pick SCAN IN above, start the camera, and go shelf by shelf through what you already have at home. Each scan adds 1. No barcode? Add it manually below.</p></div>`;
+    return;
+  }
+  if(!list.length){ wrap.innerHTML=`<div class="empty"><p class="muted">No items match this filter / search.</p></div>`; return; }
+  wrap.innerHTML=`<div class="items">${list.map(i=>`
+    <article class="item">
+      <div class="itemTop">
+        <div class="thumb">${i.image?`<img src="${escapeHtml(i.image)}" alt="">`:'🥫'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:6px;align-items:start;justify-content:space-between">
+            <strong style="line-height:1.2">${escapeHtml(i.name)}</strong>
+            <span class="badge ${i.qty<=1?'low':''}">${i.qty<=1?'Low':'In stock'}</span>
+          </div>
+          <div class="muted" style="font-size:13px">${escapeHtml(i.brand||'')} ${i.brand?'·':''} ${escapeHtml(i.barcode)}</div>
+          <select onchange="changeLoc('${i.id}',this.value)" style="margin-top:6px;padding:6px 8px;border-radius:999px;border:1px solid var(--line);background:var(--surface2);font-size:13px;font-weight:600">
+            ${['Pantry','Fridge','Freezer','Other'].map(loc=>`<option ${loc===i.location?'selected':''}>${loc}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="qtyRow">
+        <button class="qtyBtn" onclick="changeQty('${i.id}',-1)" aria-label="Decrease">−</button>
+        <div style="display:flex;align-items:center;gap:4px"><input class="qtyInput" type="number" min="0" value="${i.qty}" onchange="setQty('${i.id}',this.value)"><span class="muted" style="font-size:13px">in stock</span></div>
+        <button class="qtyBtn" onclick="changeQty('${i.id}',1)" aria-label="Increase">+</button>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-outline btn-sm" style="flex:1" onclick="handleBarcode('${escapeHtml(i.barcode)}')">Scan again (${state.mode==='in'?'+1':'−1'})</button>
+        <button class="btn btn-outline btn-sm" onclick="removeItem('${i.id}')">Remove</button>
+      </div>
+    </article>`).join('')}</div>`;
+}
+
+function exportJSON(){
+  const blob=new Blob([JSON.stringify({exportedAt:new Date().toISOString(), items:state.items},null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='household-inventory.json'; a.click(); URL.revokeObjectURL(a.href);
+  showToast('Backup downloaded');
+}
+function importJSON(ev){
+  const f=ev.target.files[0]; if(!f) return;
+  const r=new FileReader(); r.onload=()=>{ try{ const j=JSON.parse(r.result); if(Array.isArray(j.items)){ state.items=j.items; render(); showToast('List imported'); log('Imported backup',0);} }catch(e){ showToast('That file didn’t import'); } }; r.readAsText(f);
+}
+function copyList(){
+  const text=state.items.map(i=>`${i.qty} × ${i.name}${i.brand?' ('+i.brand+')':''} — ${i.location}`).join('\n')||'Inventory is empty';
+  navigator.clipboard.writeText(text).then(()=>showToast('List copied'));
+}
+// Connection lives in connectSupabase() in the Supabase section above: it signs in, stores the session access token, probes the tables with that token, loads the shared list, and turns on live sync for every scan and edit.
+
+// Allow hardware scanner (types barcode + Enter) globally when not typing in a form field for name
+document.addEventListener('keydown', e=>{
+  // no-op: barcode field handles Enter itself
+});
+// Restore a saved URL & key (if the user saved one on this device) and
+// keep the tick honest: unticking forgets the saved copy right away.
+// If a connection is configured (built in, or saved on this device),
+// the URL/key setup fields stay hidden — everyone just signs in.
+loadSavedSbConfig();
+applySbVisibility();
+// Pick up a Google / Apple return (or a session already stored by
+// Supabase) and finish signing in with its session token.
+initSbAuthFromReturn();
+(function(){
+  const remember = document.getElementById('sbRemember');
+  if(remember){
+    remember.addEventListener('change', function(){
+      if(!remember.checked){ clearSavedSbConfig(false); updateSavedNote(); }
+    });
+  }
+})();
+render(); renderLog();
+</script>
+</body>
+</html>
