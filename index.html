@@ -206,6 +206,7 @@ summary{cursor:pointer;font-weight:800}
     <div class="card">
       <button class="btn btn-outline" style="width:100%" onclick="toggleActivity()">Recent activity</button>
       <div id="activityWrap" style="display:none;margin-top:12px">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn btn-outline btn-sm" id="clearLogBtn" onclick="clearActivityLog()">Clear recent activity</button></div>
       <ul id="logList" class="log"><li class="muted">No scans yet — try scanning a barcode above.</li></ul>
       </div>
       <button class="btn btn-outline" style="width:100%;margin-top:10px" onclick="toggleBackup()">Backup &amp; share</button>
@@ -458,8 +459,10 @@ async function sbLoadLogs(){
     const res = await fetch(sbConfig.url + '/rest/v1/inventory_log?select=item_name,delta,created_at&order=created_at.desc&limit=12', { headers: sbHeaders() });
     if(!res.ok) return;
     const rows = await res.json();
-    if(rows.length){
-      state.logs = rows.map(r => ({ msg: r.item_name || 'Item', time: new Date(r.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), delta: r.delta }));
+    const clearedAt = logClearedAt();
+    const fresh = rows.filter(r => !clearedAt || new Date(r.created_at).getTime() > clearedAt);
+    if(fresh.length){
+      state.logs = fresh.map(r => ({ msg: r.item_name || 'Item', time: new Date(r.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), delta: r.delta }));
       renderLog();
     }
   }catch(e){}
@@ -787,6 +790,39 @@ function renderLog(){
   const el=document.getElementById('logList');
   if(!state.logs.length){ el.innerHTML='<li class="muted">No scans yet — try scanning a barcode above.</li>'; return;}
   el.innerHTML=state.logs.slice(0,12).map(l=>`<li><span>${escapeHtml(l.msg)}</span><span class="muted">${l.time} ${l.delta? '· '+(l.delta>0?'+':'')+l.delta:''}</span></li>`).join('');
+}
+// Clear recent activity — two-tap confirm, no modal. Only the log is cleared,
+// never the inventory items. The clear time is remembered on this device so
+// shared log rows older than the clear do not come back on reload/sign-in.
+function logClearedAt(){
+  try{ const v = localStorage.getItem('household-inventory-log-cleared-v1'); return v ? new Date(v).getTime() : 0; }catch(e){ return 0; }
+}
+let clearLogArmed = false;
+let clearLogTimer = null;
+function clearActivityLog(){
+  const btn = document.getElementById('clearLogBtn');
+  if(!clearLogArmed){
+    clearLogArmed = true;
+    if(btn) btn.textContent = 'Tap again to clear';
+    clearTimeout(clearLogTimer);
+    clearLogTimer = setTimeout(()=>{ clearLogArmed = false; if(btn) btn.textContent = 'Clear recent activity'; }, 4000);
+    return;
+  }
+  clearTimeout(clearLogTimer); clearLogArmed = false;
+  if(btn) btn.textContent = 'Clear recent activity';
+  state.logs = [];
+  renderLog();
+  try{ localStorage.setItem('household-inventory-log-cleared-v1', new Date().toISOString()); }catch(e){}
+  clearSharedLog();
+  showToast('Recent activity cleared');
+}
+async function clearSharedLog(){
+  if(!sbUser) return;
+  try{
+    await sbRefreshAccessToken();
+    const res = await fetch(sbConfig.url + '/rest/v1/inventory_log', { method: 'DELETE', headers: sbHeaders() });
+    if(!res.ok) showToast('Cleared on this device — shared log may return on sign-in');
+  }catch(e){ showToast('Cleared on this device — shared log may return on sign-in'); }
 }
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
 
