@@ -616,13 +616,13 @@ async function sendSignInCode(){
   const btn = document.getElementById('otpSendBtn'); if(btn) btn.disabled = true;
   if(status) status.textContent = 'Sending a 6-digit code to ' + email + '…';
   try{
-    const result = await sb.auth.signInWithOtp({ email: email, options: { shouldCreateUser: true } });
+    const result = await sb.auth.signInWithOtp({ email: email, options: { shouldCreateUser: true, emailRedirectTo: 'https://stanley850o.github.io/grocery-inventory/' } });
     if(result && result.error){
       if(status) status.textContent = 'Couldn’t send the code: ' + result.error.message;
       if(btn) btn.disabled = false;
       return;
     }
-    if(status) status.textContent = 'Code sent to ' + email + ' — check your email, then enter the 6-digit code below.';
+    if(status) status.textContent = 'Code sent to ' + email + ' — copy the 6-digit code from the email and enter it below. Do not tap the link in the email.';
     showToast('Code sent — check your email');
     const codeEl = document.getElementById('otpCode'); if(codeEl) codeEl.focus();
   }catch(e){
