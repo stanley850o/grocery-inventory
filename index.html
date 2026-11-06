@@ -92,14 +92,9 @@ summary{cursor:pointer;font-weight:800}
     <div>
       <div class="eyebrow">Household • Groceries</div>
       <h1>What’s in the house?</h1>
-      <p class="sub">Scan once at home to build your list, then scan at the store as you buy. Every scan is <strong>+1 or −1</strong> — tap the quantity anytime to fix it.</p>
     </div>
     <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
       <span class="pill" id="connPill"><span class="dot" id="connDot"></span> <span id="connPillText">Preview mode — connect Supabase below to share live</span></span>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-outline btn-sm" onclick="exportJSON()">Export list</button>
-        <label class="btn btn-outline btn-sm" style="cursor:pointer">Import <input type="file" accept=".json" hidden onchange="importJSON(event)"></label>
-      </div>
     </div>
   </div>
 
@@ -115,7 +110,6 @@ summary{cursor:pointer;font-weight:800}
       <button id="btnIn" class="modeBtn active-in" onclick="setMode('in')">⬆ &nbsp;SCAN IN &nbsp;·&nbsp; +1</button>
       <button id="btnOut" class="modeBtn" onclick="setMode('out')">⬇ &nbsp;SCAN OUT &nbsp;·&nbsp; −1 &nbsp;<span style="font-weight:400;font-size:13px">use / finish</span></button>
     </div>
-    <p id="modeHint" class="muted" style="margin:10px 2px 0">You’re scanning <strong style="color:var(--green)">IN</strong> — perfect for the first big shop at home and for scanning at the store checkout.</p>
 
     <div class="scannerGrid">
       <div>
@@ -132,17 +126,16 @@ summary{cursor:pointer;font-weight:800}
           <button id="startBtn" class="btn btn-green" style="flex:1" onclick="startScanner()">Start camera scan</button>
           <button id="stopBtn" class="btn btn-outline" style="display:none" onclick="stopScanner()">Stop</button>
         </div>
-        <p class="muted" style="font-size:13px">No camera? Type the barcode below — or use a Bluetooth barcode scanner (it types like a keyboard).</p>
+        <button class="btn btn-outline btn-sm" style="margin-top:10px;width:100%" onclick="toggleManualBarcode()">Type barcode instead</button>
       </div>
 
-      <div>
+      <div id="manualBarcodeBox" style="display:none">
         <div class="field">
           <label for="barcodeInput">Barcode (EAN / UPC)</label>
           <div style="display:flex;gap:8px;margin-top:6px">
             <input id="barcodeInput" class="input" inputmode="numeric" placeholder="e.g. 3017620422003" onkeydown="if(event.key==='Enter') handleManualBarcode()">
             <button class="btn btn-primary" onclick="handleManualBarcode()">Lookup</button>
           </div>
-          <p class="muted" style="margin:6px 0 0">We look it up on <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> automatically. If it’s not there, you name it once and it’s remembered next time.</p>
         </div>
         <div id="lookupCard" style="display:none;background:var(--surface2);border-radius:14px;padding:12px">
           <div style="display:flex;gap:12px;align-items:center">
@@ -154,9 +147,6 @@ summary{cursor:pointer;font-weight:800}
             </div>
           </div>
           <button class="btn btn-green btn-sm" style="margin-top:10px;width:100%" onclick="confirmLookup()">Confirm — add with current mode</button>
-        </div>
-        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:11px 12px;margin-top:10px" id="tipBox">
-          <strong style="font-size:14px">💡 First-time tip:</strong> <span style="font-size:14px">Start in the pantry, work shelf by shelf. Scan everything you already have — dupes just stack the quantity.</span>
         </div>
       </div>
     </div>
@@ -180,8 +170,9 @@ summary{cursor:pointer;font-weight:800}
 
   <div class="grid2">
     <div class="card">
+      <button class="btn btn-outline" style="width:100%" onclick="toggleManualForm()">+ Add manually</button>
+      <div id="manualFormWrap" style="display:none;margin-top:14px">
       <h2>Add manually</h2>
-      <p class="muted">No barcode, no match, or bulk item? Add it here — barcode is optional.</p>
       <form onsubmit="addManual(event)">
         <div class="field"><label>Product name *</label><input id="mName" class="input" required placeholder="e.g. Oat Milk 1L"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -196,34 +187,39 @@ summary{cursor:pointer;font-weight:800}
         </div>
         <button class="btn btn-primary" style="width:100%">Add to inventory</button>
       </form>
+      </div>
     </div>
 
     <div class="card">
-      <h2>Recent activity</h2>
-      <p class="muted">Every scan and edit, newest first — also written to the shared Supabase log when you’re signed in.</p>
+      <button class="btn btn-outline" style="width:100%" onclick="toggleActivity()">Recent activity</button>
+      <div id="activityWrap" style="display:none;margin-top:12px">
       <ul id="logList" class="log"><li class="muted">No scans yet — try scanning a barcode above.</li></ul>
-      <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
-      <h3>Share &amp; back up</h3>
-      <p class="muted">Signed in below, your list lives in Supabase and is shared with the household. In preview mode it’s kept only while this tab is open — export a JSON backup anytime either way.</p>
+      </div>
+      <button class="btn btn-outline" style="width:100%;margin-top:10px" onclick="toggleBackup()">Backup &amp; share</button>
+      <div id="backupWrap" style="display:none;margin-top:12px">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-outline btn-sm" onclick="exportJSON()">Download backup (.json)</button>
         <button class="btn btn-outline btn-sm" onclick="copyList()">Copy shopping-style list</button>
+        <label class="btn btn-outline btn-sm" style="cursor:pointer">Import <input type="file" accept=".json" hidden onchange="importJSON(event)"></label>
+      </div>
       </div>
     </div>
   </div>
 
   <!-- SUPABASE SETUP -->
   <div class="card" style="margin-top:16px">
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;align-items:start">
-      <div>
-        <h2 style="font-family:'Bricolage Grotesque',sans-serif">Sign in to the shared list</h2>
-        <p class="muted" style="max-width:640px">The shared list lives in Supabase, and the connection to it is built into this app by the owner. Sign in with a link emailed to you, or with your email and password — there’s nothing else to set up, no URL or key to paste, ever.</p>
-      </div>
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;align-items:center">
+      <h2 style="font-family:'Bricolage Grotesque',sans-serif;margin:0">Sign in to the shared list</h2>
       <span class="badge" id="sbBadge">Not signed in</span>
     </div>
+    <div id="signedInRow" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">
+      <span class="muted">Signed in as <strong id="signedInEmail" style="color:var(--text)"></strong></span>
+      <button class="btn btn-outline btn-sm" onclick="signOutSupabase()">Sign out</button>
+    </div>
+    <button class="btn btn-outline" id="signinToggleBtn" style="width:100%;margin-top:12px" onclick="toggleSignin()">Sign in</button>
+    <div id="signinBody" style="display:none;margin-top:14px">
 
     <div id="sbSetupFields">
-    <p class="muted" style="margin:0 0 12px"><strong style="color:var(--text)">Owner setup — one time only.</strong> This copy of the app doesn’t have the household connection built in yet, so the fields below are showing. Paste the Project URL and publishable key once (from Supabase → <span class="kbd">Connect</span>, or Settings → API Keys — the <span class="kbd">publishable</span> key, <span class="kbd">sb_publishable_…</span>, never the secret key) and connect. In the copy you share with the household (e.g. on GitHub Pages), paste the same two values once into the clearly marked <span class="kbd">SB_BUILT_IN</span> spot near the top of this file’s script — from then on these fields disappear for everyone and sign-in is all anyone sees. To invite people: in Supabase → Authentication, add or invite each household member by email.</p>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="field"><label>Supabase Project URL</label><input id="sbUrl" class="input" placeholder="https://xxxx.supabase.co" autocomplete="off"></div>
@@ -244,7 +240,6 @@ summary{cursor:pointer;font-weight:800}
 
     <!-- Sign in with an emailed link (code as fallback) -->
     <div id="otpSection">
-      <p class="muted" style="font-size:13px;margin:0 0 10px">Enter your email below, tap <strong style="color:var(--text)">Send sign-in link</strong>, then tap the link in the email Supabase sends you — it brings you back here signed in. If your email also shows a 6-digit code, you can enter it below instead. Links only go to the two household emails.</p>
       <div class="codeDivider"><span>sign in with an emailed link</span></div>
     </div>
 
@@ -268,54 +263,11 @@ summary{cursor:pointer;font-weight:800}
     <div style="margin-top:10px">
       <button type="button" class="btn btn-outline btn-sm" id="sbOwnerLink" style="display:none" onclick="toggleSbSetup()">Owner: connection settings</button>
     </div>
-    <p class="muted" style="margin:10px 0 0">Only the two household emails can sign in with a code — if yours isn’t one of them, ask the owner to add you in Supabase → <strong>Authentication → Users</strong> (or invite you by email). Once signed in, every scan, quantity edit, and removal syncs to the shared list, and the list reloads from Supabase each time you sign in.</p>
 
-    <details style="margin-top:16px">
-      <summary>Owner setup — email-code sign-in (one time, in Supabase)</summary>
-      <div class="muted" style="font-size:14px;line-height:1.6">
-        <p style="margin:10px 0 6px"><strong style="color:var(--text)">How sign-in works:</strong> this app sends a sign-in link to the email typed in, using Supabase Auth (signInWithOtp). Tap the link in that email and it brings you back here signed in. If the email also shows a 6-digit code, you can enter it below instead. No social sign-in is used. Only the two household emails written into the app’s code are allowed — any other email gets an error and nothing is sent.</p>
-        <p style="margin:8px 0 6px"><strong style="color:var(--text)">If no email arrives:</strong> check the spam folder, and in Supabase → <span class="kbd">Authentication → Email templates</span>, check the Magic Link template is on. By default that template only contains the sign-in link and no code — to also show a 6-digit code in every email, edit that template to include the code with <span class="kbd">{{ .Token }}</span> next to the link, and save. The email comes from Supabase, not from this app.</p>
-        <p style="margin:8px 0 0"><strong style="color:var(--text)">Site URL:</strong> in Supabase → <span class="kbd">Authentication → URL Configuration</span>, keep the <strong>Site URL</strong> set to this app’s address (e.g. your GitHub Pages URL) so any links in Supabase emails come back here. Email and password sign-in still works as a fallback below the code sign-in.</p>
-      </div>
-    </details>
 
-    <details style="margin-top:16px">
-      <summary>SQL schema — copy &amp; run in Supabase</summary>
-      <pre id="sqlBlock">create table if not exists public.inventory_items (
-  id uuid primary key default gen_random_uuid(),
-  barcode text unique not null,
-  name text not null,
-  brand text,
-  image_url text,
-  quantity integer not null default 0 check (quantity &gt;= 0),
-  location text not null default 'Pantry',
-  created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  updated_by uuid references auth.users(id)
-);
-create table if not exists public.inventory_log (
-  id bigint generated always as identity primary key,
-  barcode text, item_name text, delta integer, mode text,
-  user_id uuid references auth.users(id),
-  created_at timestamptz default now()
-);
-alter table public.inventory_items enable row level security;
-alter table public.inventory_log enable row level security;
--- Household policy: any signed-in user can read/write (tighten later if needed)
-create policy "household read" on public.inventory_items for select to authenticated using (true);
-create policy "household write" on public.inventory_items for all to authenticated using (true) with check (true);
-create policy "log read" on public.inventory_log for select to authenticated using (true);
-create policy "log write" on public.inventory_log for insert to authenticated with check (true);</pre>
-      <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('sqlBlock').innerText); showToast('SQL copied — paste it in Supabase SQL Editor')">Copy SQL</button>
-    </details>
 
-    <details style="margin-top:10px">
-      <summary>How scanning works in the live version</summary>
-      <p class="muted">Scan → barcode decoded on the phone → Open Food Facts lookup for name/photo → quantity ±1 saved to Supabase → anyone else signed in sees it when they connect or refresh. If Open Food Facts has no match, the first person types the name once; it’s saved against that barcode for everyone after that.</p>
-    </details>
+    </div><!-- /signinBody -->
   </div>
-
-  <p class="muted" style="text-align:center;margin-top:18px;font-size:13px">Built for the house — scan in at home, scan in at the store, scan out when you use it. Quantities are always editable.</p>
 </div>
 
 <div id="toast" class="toast"></div>
@@ -575,8 +527,8 @@ async function completeSignIn(session){
       try{ const r = await sb.auth.getUser(); if(r && r.data && r.data.user) sbUser = r.data.user; }catch(e){}
     }
     const probe = await fetch(sbConfig.url + '/rest/v1/inventory_items?select=id&limit=1', { headers: sbHeaders() });
-    if(!probe.ok){ const t = await probe.text(); if(status) status.textContent = 'Signed in, but reached Supabase with ' + probe.status + '. ' + t.slice(0, 140) + ' — check you ran the SQL schema.'; return false; }
-    try{ await sbLoadItems(); await sbLoadLogs(); }catch(e){ if(status) status.textContent = 'Signed in, but loading the shared list failed — check the SQL schema was run.'; return false; }
+    if(!probe.ok){ const t = await probe.text(); if(status) status.textContent = 'Signed in, but reached Supabase with ' + probe.status + '. ' + t.slice(0, 140) + ' — check the shared tables are set up in Supabase.'; return false; }
+    try{ await sbLoadItems(); await sbLoadLogs(); }catch(e){ if(status) status.textContent = 'Signed in, but loading the shared list failed — check the shared tables are set up in Supabase.'; return false; }
     sbLastCompletedToken = session.access_token;
     const emailLabel = (sbUser && sbUser.email) ? sbUser.email : 'your account';
     setConnUI('live', emailLabel);
@@ -584,6 +536,9 @@ async function completeSignIn(session){
     if(!builtinSbConfig()){ try{ if(localStorage.getItem(SB_STORE_KEY)) savedNote = ' URL & key are saved on this device for next time.'; }catch(e){} }
     if(status) status.textContent = '✅ Live — signed in as ' + emailLabel + '. Scans and edits now save to the shared Supabase list.' + savedNote;
     showToast('Connected — live sync on');
+    var sr=document.getElementById('signedInRow'); if(sr){ sr.style.display='flex'; var se=document.getElementById('signedInEmail'); if(se) se.textContent=emailLabel; }
+    var tb=document.getElementById('signinToggleBtn'); if(tb) tb.style.display='none';
+    var sbo=document.getElementById('signinBody'); if(sbo) sbo.style.display='none';
     log('Connected to shared Supabase list', 0);
     return true;
   }catch(e){
@@ -763,6 +718,9 @@ async function signOutSupabase(){
   if(sb){ try{ await sb.auth.signOut(); }catch(e){} }
   sb = null; sbUser = null; sbAccessToken = null; sbConfig = null; sbLastCompletedToken = null;
   setConnUI('preview');
+  var sr2=document.getElementById('signedInRow'); if(sr2) sr2.style.display='none';
+  var tb2=document.getElementById('signinToggleBtn'); if(tb2) tb2.style.display='block';
+  var sbo2=document.getElementById('signinBody'); if(sbo2) sbo2.style.display='none';
   // Signing out ends the session only — it never removes the built-in
   // connection or a URL & key saved on this device, so signing back in
   // never needs setup again.
@@ -784,11 +742,18 @@ function showToast(msg){
   if(navigator.vibrate) navigator.vibrate(30);
   clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2600);
 }
+function toggleEl(id){ var el=document.getElementById(id); if(!el) return; el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none'; }
+function toggleManualBarcode(){ toggleEl('manualBarcodeBox'); }
+function toggleManualForm(){ toggleEl('manualFormWrap'); }
+function toggleActivity(){ toggleEl('activityWrap'); }
+function toggleBackup(){ toggleEl('backupWrap'); }
+function toggleSignin(){ toggleEl('signinBody'); }
 function setMode(m){
   state.mode=m;
   document.getElementById('btnIn').className='modeBtn '+(m==='in'?'active-in':'');
   document.getElementById('btnOut').className='modeBtn '+(m==='out'?'active-out':'');
-  document.getElementById('modeHint').innerHTML = m==='in'
+  var mh = document.getElementById('modeHint');
+  if(mh) mh.innerHTML = m==='in'
     ? 'You’re scanning <strong style="color:var(--green)">IN</strong> — perfect for the first big shop at home and for scanning at the store checkout.'
     : 'You’re scanning <strong style="color:#dc2626">OUT</strong> — scan when you open, use, or finish something so the count drops by 1.';
 }
@@ -894,6 +859,7 @@ async function addManual(e){
     log(`${name} added manually`, qty);
   }
   e.target.reset(); document.getElementById('mQty').value=1; render(); showToast('Added to inventory');
+  var mw=document.getElementById('manualFormWrap'); if(mw) mw.style.display='none';
   if(saved){ await sbUpsertItem(saved); sbWriteLog(saved, qty); render(); }
 }
 
