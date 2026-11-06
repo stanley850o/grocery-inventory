@@ -901,10 +901,10 @@ async function lookupUPCitemdb(barcode){
 async function lookupProduct(barcode){
   if(Object.prototype.hasOwnProperty.call(lookupCache, barcode)) return lookupCache[barcode];
   // Order: Open Food Facts (food) -> Open Beauty Facts (cosmetics/shampoo)
-  // -> Open Products Facts (general) -> Open Pet Food Facts -> UPCitemdb.
+  // -> Open Products Facts (general) -> UPCitemdb.
   // The Open* sister databases share OFF's API format and are browser-safe
   // (Access-Control-Allow-Origin: *), no key needed.
-  const dbs=['world.openfoodfacts.org','world.openbeautyfacts.org','world.openproductsfacts.org','world.openpetfoodfacts.org'];
+  const dbs=['world.openfoodfacts.org','world.openbeautyfacts.org','world.openproductsfacts.org'];
   for(const host of dbs){
     const hit=await lookupOpenFacts(host, barcode);
     if(hit){ cacheLookup(barcode, hit); return hit; }
