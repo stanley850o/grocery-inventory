@@ -863,11 +863,30 @@ async function lookupOpenFacts(host, barcode){
 }
 async function lookupOFF(barcode){ return lookupOpenFacts('world.openfoodfacts.org', barcode); }
 
-// Last resort for general products the Open* databases do not carry / general products Open Food Facts does not carry.
+// Last resort for general products the Open* databases do not carry.
 // Free trial, no API key: 100 requests/day, 6/min burst, shared per IP.
-// NOTE: UPCitemdb is reported to restrict CORS origins, so this may fail from a
-// browser even though it works via curl — lookupProduct treats any failure as "not found".
+// Route it through the Supabase Edge Function `upc-lookup` first: the
+// trial API only allows CORS from upcitemdb.com itself, so a direct call
+// from this GitHub Pages origin is blocked by the browser. The function
+// calls UPCitemdb server-side (no CORS problem), validates the GS1 check
+// digit first so no quota is spent on invalid codes, and returns the same
+// {barcode,name,brand,image} shape. If the function is not deployed yet
+// (or answers non-OK), fall back to the direct trial call below.
 async function lookupUPCitemdb(barcode){
+  try{
+    const cfg=getEffectiveSbConfig();
+    if(cfg && cfg.url && cfg.key){
+      const proxyUrl=cfg.url.replace(/\/$/,'')+'/functions/v1/upc-lookup?upc='+encodeURIComponent(barcode);
+      const r=await fetch(proxyUrl,{ headers:{ apikey:cfg.key, Authorization:'Bearer '+cfg.key } });
+      if(r.ok){
+        const j=await r.json();
+        if(j && j.name) return { barcode, name:j.name||'Unknown product', brand:j.brand||'', image:j.image||'', location:'Pantry' };
+        return null;
+      }
+      // Non-OK from the proxy (not deployed / 401 / 429 / 5xx): fall through
+      // to the direct trial call. The app keeps working either way.
+    }
+  }catch(e){}
   try{
     const r=await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`);
     const j=await r.json();
