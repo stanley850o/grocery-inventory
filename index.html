@@ -845,6 +845,15 @@ function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;'
 // free trial is 100 requests/day shared per IP, and a big first scan-in could burn it fast.
 let lookupCache = {};
 try{ lookupCache = JSON.parse(localStorage.getItem('household-inventory-lookup-cache-v1') || '{}') || {}; }catch(e){ lookupCache = {}; }
+// Drop stale cached MISSES (null, or an entry with no product name) so
+// products scanned before the UPC proxy went live get a fresh lookup on
+// their next scan. Cached HITS (objects with a name) are kept untouched,
+// so no new lookup calls are spent on products already found.
+(function(){
+  var cleaned=false;
+  for(var k in lookupCache){ var v=lookupCache[k]; if(!v || typeof v!=='object' || !v.name){ delete lookupCache[k]; cleaned=true; } }
+  if(cleaned){ try{ localStorage.setItem('household-inventory-lookup-cache-v1', JSON.stringify(lookupCache)); }catch(e){} }
+})();
 function cacheLookup(barcode, result){
   lookupCache[barcode] = result;
   try{ localStorage.setItem('household-inventory-lookup-cache-v1', JSON.stringify(lookupCache)); }catch(e){}
