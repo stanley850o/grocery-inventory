@@ -35,6 +35,9 @@ h1{font-family:"Bricolage Grotesque",sans-serif;font-size:clamp(28px,5vw,44px);l
 .stat{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px}
 .stat b{font-size:26px;display:block;line-height:1}
 .stat span{font-size:13px;color:var(--muted)}
+.stat.tappable{cursor:pointer}
+.stat.tappable:active{transform:scale(.99)}
+.stat .tapHint{display:block;font-size:12px;color:var(--muted);margin-top:4px}
 .modeWrap{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:var(--shadow)}
 .modeToggle{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;width:100%;min-width:0;box-sizing:border-box}
 .modeBtn{border:1px solid var(--line);border-radius:999px;padding:10px 4px;font-weight:800;cursor:pointer;background:var(--surface2);color:var(--muted);display:block;font-size:13px;line-height:1.15;min-width:0;text-align:center;box-sizing:border-box;white-space:normal}
@@ -100,7 +103,7 @@ summary{cursor:pointer;font-weight:800}
   </div>
 
   <div class="stats">
-    <div class="stat"><b id="statLow">0</b><span>running low (0–1 left)</span></div>
+    <div class="stat tappable" role="button" tabindex="0" onclick="openLowStock()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openLowStock();}"><b id="statLow">0</b><span>running low (0–1 left)</span><span class="tapHint">Tap to view ›</span></div>
   </div>
 
   <!-- SCANNER -->
@@ -171,7 +174,7 @@ summary{cursor:pointer;font-weight:800}
       <input id="search" class="input" style="flex:1;min-width:0" placeholder="Search by name or brand…" oninput="render()">
       <button class="btn btn-outline btn-sm" onclick="closeSearch()">Close</button>
     </div>
-    <p class="muted" style="margin:8px 0 0;font-size:13px">Type a name or brand — results show below. Leave it blank to browse everything on hand.</p>
+    <p class="muted" id="searchHint" style="margin:8px 0 0;font-size:13px">Type a name or brand — results show below. Leave it blank to browse everything on hand.</p>
   </div>
 
   <!-- LAST SCANNED ITEM: the only product card shown on the page (the full
@@ -1143,14 +1146,29 @@ function renderStats(){
   var el=document.getElementById('statLow'); if(el) el.textContent=low;
 }
 function openSearch(){
+  state.filter='all';
+  document.querySelectorAll('#filters .chip').forEach(c=>c.classList.toggle('active', c.dataset.f==='all'));
+  var hint0=document.getElementById('searchHint'); if(hint0) hint0.textContent='Type a name or brand — results show below. Leave it blank to browse everything on hand.';
   var panel=document.getElementById('searchPanel'); if(panel) panel.style.display='block';
   var wrap=document.getElementById('itemsWrap'); if(wrap) wrap.style.display='block';
+  var q=document.getElementById('search'); if(q) q.placeholder='Search by name or brand…';
   render();
-  var q=document.getElementById('search'); if(q) q.focus();
+  if(q) q.focus();
+}
+function openLowStock(){
+  openSearch();
+  state.filter='low';
+  document.querySelectorAll('#filters .chip').forEach(c=>c.classList.toggle('active', c.dataset.f==='low'));
+  var q=document.getElementById('search'); if(q){ q.value=''; q.placeholder='Running low — search by name or brand…'; q.blur(); }
+  var hint=document.getElementById('searchHint'); if(hint) hint.textContent='Showing only items running low (0–1 left). Close to go back.';
+  render();
 }
 function closeSearch(){
+  state.filter='all';
+  document.querySelectorAll('#filters .chip').forEach(c=>c.classList.toggle('active', c.dataset.f==='all'));
+  var hint=document.getElementById('searchHint'); if(hint) hint.textContent='Type a name or brand — results show below. Leave it blank to browse everything on hand.';
   var panel=document.getElementById('searchPanel'); if(panel) panel.style.display='none';
-  var q=document.getElementById('search'); if(q) q.value='';
+  var q=document.getElementById('search'); if(q){ q.value=''; q.placeholder='Search by name or brand…'; }
   var wrap=document.getElementById('itemsWrap'); if(wrap) wrap.style.display='none';
   render();
 }
