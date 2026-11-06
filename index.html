@@ -217,7 +217,7 @@ summary{cursor:pointer;font-weight:800}
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;align-items:start">
       <div>
         <h2 style="font-family:'Bricolage Grotesque',sans-serif">Sign in to the shared list</h2>
-        <p class="muted" style="max-width:640px">The shared list lives in Supabase, and the connection to it is built into this app by the owner. Sign in with an emailed 6-digit code, or with your email and password — there’s nothing else to set up, no URL or key to paste, ever.</p>
+        <p class="muted" style="max-width:640px">The shared list lives in Supabase, and the connection to it is built into this app by the owner. Sign in with a link emailed to you, or with your email and password — there’s nothing else to set up, no URL or key to paste, ever.</p>
       </div>
       <span class="badge" id="sbBadge">Not signed in</span>
     </div>
@@ -242,18 +242,22 @@ summary{cursor:pointer;font-weight:800}
     </div>
     </div><!-- /sbSetupFields -->
 
-    <!-- Sign in with an emailed code -->
+    <!-- Sign in with an emailed link (code as fallback) -->
     <div id="otpSection">
-      <p class="muted" style="font-size:13px;margin:0 0 10px">Enter your email below, tap <strong style="color:var(--text)">Send sign-in code</strong>, then enter the 6-digit code Supabase emails you. Codes only go to the two household emails.</p>
-      <div class="codeDivider"><span>sign in with an emailed code</span></div>
+      <p class="muted" style="font-size:13px;margin:0 0 10px">Enter your email below, tap <strong style="color:var(--text)">Send sign-in link</strong>, then tap the link in the email Supabase sends you — it brings you back here signed in. If your email also shows a 6-digit code, you can enter it below instead. Links only go to the two household emails.</p>
+      <div class="codeDivider"><span>sign in with an emailed link</span></div>
     </div>
 
     <div class="field"><label>Your email</label><input id="sbEmail" class="input" type="email" placeholder="you@example.com" autocomplete="username"></div>
-    <div class="field"><label>6-digit sign-in code</label><input id="otpCode" class="input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="letter-spacing:.35em;font-size:18px"></div>
+    <div class="field"><label>6-digit sign-in code (only if your email shows one)</label><input id="otpCode" class="input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="letter-spacing:.35em;font-size:18px"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-      <button type="button" class="btn btn-green" id="otpSendBtn" onclick="sendSignInCode()">Send sign-in code</button>
+      <button type="button" class="btn btn-green" id="otpSendBtn" onclick="sendSignInCode()">Send sign-in link</button>
       <button type="button" class="btn btn-primary" id="otpVerifyBtn" onclick="verifySignInCode()">Verify code &amp; sign in</button>
     </div>
+    <label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:14px;line-height:1.4;margin-bottom:12px">
+      <input type="checkbox" id="sbRememberDevice" checked style="width:18px;height:18px;margin-top:2px;flex-shrink:0;accent-color:var(--green)">
+      <span><strong>Remember this device</strong> — stay signed in on this phone/browser<br><span class="muted" style="font-weight:400">Ticked: no sign-in next time you open the app here. Unticked: you&rsquo;ll sign in again next time you open it.</span></span>
+    </label>
     <div class="codeDivider"><span>or sign in with your password</span></div>
     <div class="field"><label>Your password</label><input id="sbPass" class="input" type="password" placeholder="Your Supabase account password" autocomplete="current-password" onkeydown="if(event.key==='Enter') connectSupabase()"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -269,8 +273,8 @@ summary{cursor:pointer;font-weight:800}
     <details style="margin-top:16px">
       <summary>Owner setup — email-code sign-in (one time, in Supabase)</summary>
       <div class="muted" style="font-size:14px;line-height:1.6">
-        <p style="margin:10px 0 6px"><strong style="color:var(--text)">How sign-in works:</strong> this app sends a 6-digit code to the email typed in, using Supabase Auth email codes. No social sign-in is used. Only the two household emails written into the app’s code are allowed — any other email gets an error and no code is sent.</p>
-        <p style="margin:8px 0 6px"><strong style="color:var(--text)">If no code email arrives:</strong> in Supabase → <span class="kbd">Authentication → Email templates</span>, check that email confirmation / the “Confirm email” template is on, and check the spam folder. The email comes from Supabase, not from this app.</p>
+        <p style="margin:10px 0 6px"><strong style="color:var(--text)">How sign-in works:</strong> this app sends a sign-in link to the email typed in, using Supabase Auth (signInWithOtp). Tap the link in that email and it brings you back here signed in. If the email also shows a 6-digit code, you can enter it below instead. No social sign-in is used. Only the two household emails written into the app’s code are allowed — any other email gets an error and nothing is sent.</p>
+        <p style="margin:8px 0 6px"><strong style="color:var(--text)">If no email arrives:</strong> check the spam folder, and in Supabase → <span class="kbd">Authentication → Email templates</span>, check the Magic Link template is on. By default that template only contains the sign-in link and no code — to also show a 6-digit code in every email, edit that template to include the code with <span class="kbd">{{ .Token }}</span> next to the link, and save. The email comes from Supabase, not from this app.</p>
         <p style="margin:8px 0 0"><strong style="color:var(--text)">Site URL:</strong> in Supabase → <span class="kbd">Authentication → URL Configuration</span>, keep the <strong>Site URL</strong> set to this app’s address (e.g. your GitHub Pages URL) so any links in Supabase emails come back here. Email and password sign-in still works as a fallback below the code sign-in.</p>
       </div>
     </details>
@@ -362,7 +366,7 @@ function applySbVisibility(){
   if(configured && !sbUser){
     const st = document.getElementById('sbStatus');
     if(st && (st.textContent.indexOf('Not signed in') === 0 || st.textContent.indexOf('Not connected') === 0)){
-      st.textContent = 'This copy is already connected to your household’s Supabase project — just sign in with an emailed code, or your email and password. No URL or key needed, and your password is never saved.';
+      st.textContent = 'This copy is already connected to your household’s Supabase project — just sign in with a link emailed to you, or your email and password. No URL or key needed, and your password is never saved.';
     }
     const pillText = document.getElementById('connPillText');
     if(pillText && pillText.textContent.indexOf('Preview mode') === 0) pillText.textContent = 'Shared list — sign in below to sync';
@@ -587,11 +591,51 @@ async function completeSignIn(session){
     return false;
   }finally{ sbCompleting = false; }
 }
+/* ===== Remember this device (sign-in session only) =====
+   This is separate from #sbRemember, which saves the Supabase
+   URL & key. The choice is stored in localStorage; default is
+   remembered (on). Remembered: the session persists in
+   localStorage, so reopening the app here restores the sign-in.
+   Not remembered: the session lives in sessionStorage, so it
+   ends when the tab/browser closes. */
+const REMEMBER_DEVICE_KEY = 'household-inventory-remember-device-v1';
+function rememberDeviceEnabled(){
+  try{ var v = localStorage.getItem(REMEMBER_DEVICE_KEY); return v === null ? true : v === '1'; }catch(e){ return true; }
+}
+function setRememberDevice(on){
+  try{ localStorage.setItem(REMEMBER_DEVICE_KEY, on ? '1' : '0'); }catch(e){}
+}
+function applyRememberDeviceCheckbox(){
+  var el = document.getElementById('sbRememberDevice');
+  if(el) el.checked = rememberDeviceEnabled();
+}
+async function handleRememberDeviceChange(){
+  var el = document.getElementById('sbRememberDevice');
+  if(!el) return;
+  setRememberDevice(el.checked);
+  if(!el.checked && sbUser){
+    // Unticking while signed in ends the remembered session now.
+    await signOutSupabase();
+  } else if(sb){
+    // No session to end: drop the client so the next sign-in is
+    // created with the newly chosen storage (local or session).
+    try{ await sb.auth.signOut(); }catch(e){}
+    sb = null;
+  }
+}
 function ensureSbClient(cfg){
   if(sb) { sbConfig = cfg; return sb; }
   if(!(window.supabase && window.supabase.createClient)) return null;
   sbConfig = cfg;
-  sb = window.supabase.createClient(cfg.url, cfg.key);
+  var remember = rememberDeviceEnabled();
+  var storage = null;
+  try{ storage = remember ? window.localStorage : window.sessionStorage; }catch(e){ storage = null; }
+  var authOpts = { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true };
+  if(storage) authOpts.storage = storage;
+  // detectSessionInUrl is what lets a magic-link return (Supabase
+  // redirects back here with the session in the URL) sign the user
+  // in automatically via getSession / onAuthStateChange below.
+  sb = window.supabase.createClient(cfg.url, cfg.key, { auth: authOpts });
   try{ sb.auth.onAuthStateChange(function(event, session){ if(session && session.access_token){ sbAccessToken = session.access_token; if(session.user) sbUser = session.user; if(event === 'SIGNED_IN' && !sbCompleting){ completeSignIn(session); } } }); }catch(e){}
   return sb;
 }
@@ -614,7 +658,7 @@ async function sendSignInCode(){
   if(!(window.supabase && window.supabase.createClient)){ if(status) status.textContent = 'The sign-in library didn’t load — check your connection and reload the page.'; return; }
   if(!ensureSbClient(cfg)){ if(status) status.textContent = 'Could not start sign-in — reload the page and try again.'; return; }
   const btn = document.getElementById('otpSendBtn'); if(btn) btn.disabled = true;
-  if(status) status.textContent = 'Sending a 6-digit code to ' + email + '…';
+  if(status) status.textContent = 'Sending a sign-in link to ' + email + '…';
   try{
     const result = await sb.auth.signInWithOtp({ email: email, options: { shouldCreateUser: true, emailRedirectTo: 'https://stanley850o.github.io/grocery-inventory/' } });
     if(result && result.error){
@@ -622,8 +666,8 @@ async function sendSignInCode(){
       if(btn) btn.disabled = false;
       return;
     }
-    if(status) status.textContent = 'Code sent to ' + email + ' — copy the 6-digit code from the email and enter it below. Do not tap the link in the email.';
-    showToast('Code sent — check your email');
+    if(status) status.textContent = 'Check your email and tap the link to sign in — it will bring you back to the app signed in. If your email also shows a 6-digit code, you can enter it below instead.';
+    showToast('Sign-in link sent — check your email');
     const codeEl = document.getElementById('otpCode'); if(codeEl) codeEl.focus();
   }catch(e){
     if(status) status.textContent = 'Couldn’t send the code — check your connection and try again.';
@@ -725,7 +769,7 @@ async function signOutSupabase(){
   loadSavedSbConfig();
   applySbVisibility();
   if(sbIsConfigured()){
-    document.getElementById('sbStatus').textContent = 'Signed out. Sign back in anytime with an emailed code, or your email and password — no setup needed. Until then, your list here is kept only while this tab is open.';
+    document.getElementById('sbStatus').textContent = 'Signed out. Sign back in anytime with a link emailed to you, or your email and password — no setup needed. Until then, your list here is kept only while this tab is open.';
   }else{
     document.getElementById('sbStatus').textContent = 'Signed out — back to preview mode. Your list here is kept only while this tab is open.';
   }
@@ -968,6 +1012,7 @@ document.addEventListener('keydown', e=>{
 // the URL/key setup fields stay hidden — everyone just signs in.
 loadSavedSbConfig();
 applySbVisibility();
+applyRememberDeviceCheckbox();
 // Pick up a session already stored by
 // Supabase) and finish signing in with its session token.
 initSbAuthFromReturn();
@@ -977,6 +1022,10 @@ initSbAuthFromReturn();
     remember.addEventListener('change', function(){
       if(!remember.checked){ clearSavedSbConfig(false); updateSavedNote(); }
     });
+  }
+  const rememberDevice = document.getElementById('sbRememberDevice');
+  if(rememberDevice){
+    rememberDevice.addEventListener('change', function(){ handleRememberDeviceChange(); });
   }
 })();
 render(); renderLog();
