@@ -36,8 +36,8 @@ h1{font-family:"Bricolage Grotesque",sans-serif;font-size:clamp(28px,5vw,44px);l
 .stat b{font-size:26px;display:block;line-height:1}
 .stat span{font-size:13px;color:var(--muted)}
 .modeWrap{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:var(--shadow)}
-.modeToggle{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;background:var(--surface2);padding:6px;border-radius:999px}
-.modeBtn{border:0;border-radius:999px;padding:14px 6px;font-weight:800;cursor:pointer;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:6px;font-size:15px;white-space:nowrap}
+.modeToggle{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;background:var(--surface2);padding:6px;border-radius:999px;width:100%;min-width:0}
+.modeBtn{border:0;border-radius:999px;padding:10px 4px;font-weight:800;cursor:pointer;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;line-height:1.15;min-width:0;text-align:center}
 .modeBtn.active-in{background:var(--green);color:white}
 .modeBtn.active-out{background:#dc2626;color:white}
 .modeBtn.active-check{background:#2563eb;color:white}
@@ -165,12 +165,16 @@ summary{cursor:pointer;font-weight:800}
     </div>
   </section>
 
+  <!-- LAST SCANNED ITEM: the only product card shown on the page (the full
+       list below is backend-only). Hidden until something is scanned/added. -->
+  <div id="lastItemCard" style="display:none;margin-top:16px"></div>
+
   <!-- INVENTORY + SIDE -->
-  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:22px">
+  <div style="display:none">
     <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-size:24px">Your inventory</h2>
     <input id="search" class="input" style="max-width:320px" placeholder="Search milk, pasta, eggs…" oninput="render()">
   </div>
-  <div class="toolbar" id="filters">
+  <div class="toolbar" id="filters" style="display:none">
     <button class="chip active" data-f="all" onclick="setFilter('all',this)">All</button>
     <button class="chip" data-f="low" onclick="setFilter('low',this)">Running low</button>
     <button class="chip" data-f="Pantry" onclick="setFilter('Pantry',this)">Pantry</button>
@@ -179,7 +183,7 @@ summary{cursor:pointer;font-weight:800}
     <button class="chip" data-f="Other" onclick="setFilter('Other',this)">Other</button>
   </div>
 
-  <div id="itemsWrap"></div>
+  <div id="itemsWrap" style="display:none"></div>
 
   <div class="grid2">
     <div class="card">
@@ -288,6 +292,16 @@ summary{cursor:pointer;font-weight:800}
 
 <script>
 let state = { items: [], logs: [], mode:'in', filter:'all' };
+// Last scanned/added item — the only product shown on the page (the full list
+// is backend-only). Its id is persisted so it survives a reload; if it no
+// longer exists, the last-item card falls back to the newest item.
+const LAST_ITEM_KEY='household-inventory-last-item-v1';
+let lastItemId=null;
+try{ lastItemId=localStorage.getItem(LAST_ITEM_KEY)||null; }catch(e){}
+function setLastItem(id){
+  lastItemId=id||null;
+  try{ if(id) localStorage.setItem(LAST_ITEM_KEY,id); else localStorage.removeItem(LAST_ITEM_KEY); }catch(e){}
+}
 let sb = null;          // Supabase client (auth), created on Connect
 let sbUser = null;      // signed-in user; null = preview mode
 let sbConfig = null;    // { url, key } in use for this session
@@ -836,9 +850,9 @@ function cacheLookup(barcode, result){
   try{ localStorage.setItem('household-inventory-lookup-cache-v1', JSON.stringify(lookupCache)); }catch(e){}
 }
 
-async function lookupOFF(barcode){
+async function lookupOpenFacts(host, barcode){
   try{
-    const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`);
+    const r=await fetch(`https://${host}/api/v2/product/${encodeURIComponent(barcode)}.json`);
     const j=await r.json();
     if(j.status===1 && j.product){
       const p=j.product;
@@ -847,8 +861,9 @@ async function lookupOFF(barcode){
   }catch(e){}
   return null;
 }
+async function lookupOFF(barcode){ return lookupOpenFacts('world.openfoodfacts.org', barcode); }
 
-// Fallback for non-food / general products Open Food Facts does not carry.
+// Last resort for general products the Open* databases do not carry / general products Open Food Facts does not carry.
 // Free trial, no API key: 100 requests/day, 6/min burst, shared per IP.
 // NOTE: UPCitemdb is reported to restrict CORS origins, so this may fail from a
 // browser even though it works via curl — lookupProduct treats any failure as "not found".
@@ -866,8 +881,15 @@ async function lookupUPCitemdb(barcode){
 
 async function lookupProduct(barcode){
   if(Object.prototype.hasOwnProperty.call(lookupCache, barcode)) return lookupCache[barcode];
-  const off=await lookupOFF(barcode);
-  if(off){ cacheLookup(barcode, off); return off; }
+  // Order: Open Food Facts (food) -> Open Beauty Facts (cosmetics/shampoo)
+  // -> Open Products Facts (general) -> Open Pet Food Facts -> UPCitemdb.
+  // The Open* sister databases share OFF's API format and are browser-safe
+  // (Access-Control-Allow-Origin: *), no key needed.
+  const dbs=['world.openfoodfacts.org','world.openbeautyfacts.org','world.openproductsfacts.org','world.openpetfoodfacts.org'];
+  for(const host of dbs){
+    const hit=await lookupOpenFacts(host, barcode);
+    if(hit){ cacheLookup(barcode, hit); return hit; }
+  }
   const upc=await lookupUPCitemdb(barcode);
   cacheLookup(barcode, upc);
   return upc;
@@ -893,6 +915,7 @@ function showCheckCard(item, barcode){
 function closeCheckCard(){ var c=document.getElementById('checkCard'); if(c) c.style.display='none'; checkItemId=null; }
 function checkAdjust(delta){
   const it=state.items.find(i=>i.id===checkItemId); if(!it) return;
+  setLastItem(it.id);
   it.qty=Math.max(0, it.qty+delta);
   log(`${it.name} quantity set to ${it.qty}`, delta);
   render(); sbUpsertItem(it); if(delta) sbWriteLog(it, delta);
@@ -923,6 +946,7 @@ async function handleBarcode(barcode, source){
   if(found){
     const item={ id:Date.now().toString(), ...found, qty:1 };
     state.items.unshift(item);
+    setLastItem(item.id);
     log(`${item.name} added`, 1);
     render(); showToast(`${item.name} added · qty 1`);
     await sbUpsertItem(item); sbWriteLog(item, 1); render();
@@ -939,6 +963,7 @@ async function handleBarcode(barcode, source){
   }
 }
 function applyDelta(item, delta){
+  setLastItem(item.id);
   item.qty=Math.max(0, item.qty+delta);
   log(`${item.name} ${delta>0?'scanned in':'scanned out'}`, delta);
   render();
@@ -949,11 +974,14 @@ function changeQty(id, delta){
 }
 function setQty(id, val){
   const it=state.items.find(i=>i.id===id); if(!it) return;
+  setLastItem(it.id);
   const n=parseInt(val,10); if(isNaN(n)) {render(); return;}
   const diff=n-it.qty; it.qty=Math.max(0,n); log(`${it.name} quantity set to ${it.qty}`, diff); render(); sbUpsertItem(it); if(diff) sbWriteLog(it, diff);
 }
 function removeItem(id){
-  const it=state.items.find(i=>i.id===id); state.items=state.items.filter(i=>i.id!==id); log(`${it?it.name:'Item'} removed`,0); render(); if(it) sbDeleteItem(it);
+  const it=state.items.find(i=>i.id===id);
+  if(it && it.id===lastItemId) setLastItem(null);
+  state.items=state.items.filter(i=>i.id!==id); log(`${it?it.name:'Item'} removed`,0); render(); if(it) sbDeleteItem(it);
 }
 function changeLoc(id, loc){ const it=state.items.find(i=>i.id===id); if(it){ it.location=loc; sbUpsertItem(it); } renderStats(); }
 
@@ -973,6 +1001,7 @@ async function addManual(e){
     state.items.unshift(saved);
     log(`${name} added manually`, qty);
   }
+  if(saved) setLastItem(saved.id);
   e.target.reset(); document.getElementById('mQty').value=1; render(); showToast('Added to inventory');
   var mw=document.getElementById('manualFormWrap'); if(mw) mw.style.display='none';
   if(saved){ await sbUpsertItem(saved); sbWriteLog(saved, qty); render(); }
@@ -1081,6 +1110,20 @@ function renderStats(){
   document.getElementById('statUnits').textContent=units;
   document.getElementById('statLow').textContent=low;
 }
+// Last-scanned card — the only product shown on the page. It clones the
+// matching article from the hidden backend list, so it is identical to the
+// list card, with working qty / location / scan / remove controls.
+function renderLastCard(){
+  var lc=document.getElementById('lastItemCard'); if(!lc) return;
+  if(!state.items.length){ lc.style.display='none'; lc.innerHTML=''; return; }
+  var last=state.items.find(i=>i.id===lastItemId)||state.items[0];
+  var wrap=document.getElementById('itemsWrap');
+  var art=wrap?wrap.querySelector('article[data-id="'+last.id+'"]'):null;
+  if(!art){ lc.style.display='none'; lc.innerHTML=''; return; }
+  lc.innerHTML='<h2 style="margin:0 0 10px;font-size:20px">Last scanned</h2>';
+  lc.appendChild(art.cloneNode(true));
+  lc.style.display='block';
+}
 function render(){
   renderStats();
   const q=(document.getElementById('search').value||'').toLowerCase();
@@ -1092,12 +1135,13 @@ function render(){
   });
   const wrap=document.getElementById('itemsWrap');
   if(!state.items.length){
+    var lc0=document.getElementById('lastItemCard'); if(lc0){ lc0.style.display='none'; lc0.innerHTML=''; }
     wrap.innerHTML=`<div class="empty"><div style="font-size:34px">🧺</div><h3 style="margin:8px 0 4px">Your list is empty — ready for the first big scan-in</h3><p class="muted" style="max-width:480px;margin:0 auto">Pick SCAN IN above, start the camera, and go shelf by shelf through what you already have at home. Each scan adds 1. No barcode? Add it manually below.</p></div>`;
     return;
   }
   if(!list.length){ wrap.innerHTML=`<div class="empty"><p class="muted">No items match this filter / search.</p></div>`; return; }
   wrap.innerHTML=`<div class="items">${list.map(i=>`
-    <article class="item">
+    <article class="item" data-id="${i.id}">
       <div class="itemTop">
         <div class="thumb">${i.image?`<img src="${escapeHtml(i.image)}" alt="">`:'🥫'}</div>
         <div style="flex:1;min-width:0">
@@ -1121,6 +1165,7 @@ function render(){
         <button class="btn btn-outline btn-sm" onclick="removeItem('${i.id}')">Remove</button>
       </div>
     </article>`).join('')}</div>`;
+  renderLastCard();
 }
 
 function exportJSON(){
