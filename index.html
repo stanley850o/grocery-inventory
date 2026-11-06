@@ -38,6 +38,9 @@ h1{font-family:"Bricolage Grotesque",sans-serif;font-size:clamp(28px,5vw,44px);l
 .stat.tappable{cursor:pointer}
 .stat.tappable:active{transform:scale(.99)}
 .stat .tapHint{display:block;font-size:12px;color:var(--muted);margin-top:4px}
+.progressTrack{height:8px;background:var(--surface2);border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-top:10px;display:none}
+.progressTrack.show{display:block}
+.progressFill{height:100%;width:0%;background:#2e9e5b;border-radius:999px;transition:width .7s ease}
 .modeWrap{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:var(--shadow)}
 .modeToggle{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;width:100%;min-width:0;box-sizing:border-box}
 .modeBtn{border:1px solid var(--line);border-radius:999px;padding:10px 4px;font-weight:800;cursor:pointer;background:var(--surface2);color:var(--muted);display:block;font-size:13px;line-height:1.15;min-width:0;text-align:center;box-sizing:border-box;white-space:normal}
@@ -175,6 +178,7 @@ summary{cursor:pointer;font-weight:800}
       <button class="btn btn-outline btn-sm" onclick="closeSearch()">Close</button>
     </div>
     <p class="muted" id="searchHint" style="margin:8px 0 0;font-size:13px">Type a name or brand — results show below. Leave it blank to browse everything on hand.</p>
+    <div class="progressTrack" id="lowProgress"><div class="progressFill" id="lowProgressFill"></div></div>
   </div>
 
   <!-- LAST SCANNED ITEM: the only product card shown on the page (the full
@@ -1145,7 +1149,14 @@ function renderStats(){
   const low=state.items.filter(i=>i.qty<=1).length;
   var el=document.getElementById('statLow'); if(el) el.textContent=low;
 }
+var lowTimer=null;
+function resetLowProgress(){
+  if(lowTimer){ clearTimeout(lowTimer); lowTimer=null; }
+  var track=document.getElementById('lowProgress'); if(track) track.classList.remove('show');
+  var fill=document.getElementById('lowProgressFill'); if(fill){ fill.style.transition='none'; fill.style.width='0%'; }
+}
 function openSearch(){
+  resetLowProgress();
   state.filter='all';
   document.querySelectorAll('#filters .chip').forEach(c=>c.classList.toggle('active', c.dataset.f==='all'));
   var hint0=document.getElementById('searchHint'); if(hint0) hint0.textContent='Type a name or brand — results show below. Leave it blank to browse everything on hand.';
@@ -1160,10 +1171,22 @@ function openLowStock(){
   state.filter='low';
   document.querySelectorAll('#filters .chip').forEach(c=>c.classList.toggle('active', c.dataset.f==='low'));
   var q=document.getElementById('search'); if(q){ q.value=''; q.placeholder='Running low — search by name or brand…'; q.blur(); }
-  var hint=document.getElementById('searchHint'); if(hint) hint.textContent='Showing only items running low (0–1 left). Close to go back.';
+  var hint=document.getElementById('searchHint'); if(hint) hint.textContent='Loading low-stock items…';
   render();
+  // Progress-bar feedback: the list is local data, so animate 0% -> 100%
+  // over ~700ms, then say completed and scroll the products into view.
+  var track=document.getElementById('lowProgress'); if(track) track.classList.add('show');
+  var fill=document.getElementById('lowProgressFill');
+  if(fill){ fill.style.transition='none'; fill.style.width='0%'; void fill.offsetWidth; fill.style.transition='width .7s ease'; }
+  if(lowTimer){ clearTimeout(lowTimer); }
+  requestAnimationFrame(function(){ if(fill) fill.style.width='100%'; });
+  lowTimer=setTimeout(function(){
+    var h2=document.getElementById('searchHint'); if(h2) h2.textContent='\u2713 Completed — scroll to see the products.';
+    var wrap=document.getElementById('itemsWrap'); if(wrap) wrap.scrollIntoView({behavior:'smooth', block:'start'});
+  }, 750);
 }
 function closeSearch(){
+  resetLowProgress();
   state.filter='all';
   document.querySelectorAll('#filters .chip').forEach(c=>c.classList.toggle('active', c.dataset.f==='all'));
   var hint=document.getElementById('searchHint'); if(hint) hint.textContent='Type a name or brand — results show below. Leave it blank to browse everything on hand.';
