@@ -82,18 +82,8 @@ details{border:1px solid var(--line);border-radius:16px;padding:14px;background:
 summary{cursor:pointer;font-weight:800}
 .kbd{font-family:monospace;background:var(--surface2);padding:2px 6px;border-radius:6px}
 .empty{border:1.5px dashed var(--line);border-radius:16px;padding:28px;text-align:center;background:var(--surface)}
-.oauthDivider{display:flex;align-items:center;gap:12px;margin:18px 0 12px;color:var(--muted);font-size:13px;font-weight:600}
-.oauthDivider::before,.oauthDivider::after{content:"";flex:1;height:1px;background:var(--line)}
-.oauthGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@media(max-width:520px){.oauthGrid{grid-template-columns:1fr}}
-.oauthBtn{border-radius:12px;padding:13px 14px;font-weight:700;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;transition:opacity .15s,transform .1s}
-.oauthBtn:active{transform:scale(.99)}
-.oauthBtn:disabled{opacity:.55;cursor:not-allowed}
-.oauthBtn-google{background:#fff;color:#1f1f1f;border:1.5px solid #dadce0}
-.oauthBtn-google:hover{border-color:#bdc1c6;background:#f8f9fa}
-.oauthBtn-apple{background:#000;color:#fff;border:1.5px solid #000}
-.oauthBtn-apple:hover{opacity:.88}
-@media(prefers-color-scheme:dark){.oauthBtn-apple{background:#fff;color:#000;border-color:#fff}.oauthBtn-google{background:#fff;color:#1f1f1f}}
+.codeDivider{display:flex;align-items:center;gap:12px;margin:18px 0 12px;color:var(--muted);font-size:13px;font-weight:600}
+.codeDivider::before,.codeDivider::after{content:"";flex:1;height:1px;background:var(--line)}
 </style>
 </head>
 <body>
@@ -227,7 +217,7 @@ summary{cursor:pointer;font-weight:800}
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;align-items:start">
       <div>
         <h2 style="font-family:'Bricolage Grotesque',sans-serif">Sign in to the shared list</h2>
-        <p class="muted" style="max-width:640px">The shared list lives in Supabase, and the connection to it is built into this app by the owner. Sign in with Google, Apple, or your email and password — there’s nothing else to set up, no URL or key to paste, ever.</p>
+        <p class="muted" style="max-width:640px">The shared list lives in Supabase, and the connection to it is built into this app by the owner. Sign in with an emailed 6-digit code, or with your email and password — there’s nothing else to set up, no URL or key to paste, ever.</p>
       </div>
       <span class="badge" id="sbBadge">Not signed in</span>
     </div>
@@ -252,51 +242,36 @@ summary{cursor:pointer;font-weight:800}
     </div>
     </div><!-- /sbSetupFields -->
 
-    <!-- Social sign-in (Supabase OAuth) -->
-    <div id="oauthSection">
-      <div class="oauthGrid" role="group" aria-label="Sign in with Google or Apple">
-        <button type="button" class="oauthBtn oauthBtn-google" id="btnGoogle" onclick="signInWithProvider('google')">
-          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.3-2.2H12v4.3h6.5a5.6 5.6 0 0 1-2.4 3.7v3h3.9c2.3-2.1 3.5-5.2 3.5-8.8z"/><path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-3.9-3c-1.1.7-2.5 1.2-4 1.2-3.1 0-5.7-2.1-6.6-4.9H1.3v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.4 14.4a7.2 7.2 0 0 1 0-4.8V6.5H1.3a12 12 0 0 0 0 11l4.1-3.1z"/><path fill="#EA4335" d="M12 4.7c1.8 0 3 .8 3.7 1.4l3.3-3.2C17.9 1.1 15.2 0 12 0A12 12 0 0 0 1.3 6.5l4.1 3.1C6.3 6.8 8.9 4.7 12 4.7z"/></svg>
-          Continue with Google
-        </button>
-        <button type="button" class="oauthBtn oauthBtn-apple" id="btnApple" onclick="signInWithProvider('apple')">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M17.05 12.54c0-2.4 1.96-3.55 2.05-3.6-1.12-1.64-2.86-1.86-3.48-1.89-1.48-.15-2.89.87-3.64.87-.75 0-1.9-.85-3.13-.83-1.61.02-3.1.94-3.93 2.38-1.68 2.9-.43 7.2 1.2 9.56.8 1.16 1.75 2.46 3 2.41 1.2-.05 1.66-.78 3.12-.78s1.87.78 3.14.76c1.3-.02 2.12-1.18 2.92-2.34.92-1.35 1.3-2.65 1.32-2.72-.03-.01-2.54-.98-2.57-3.82ZM14.65 5.4c.66-.8 1.1-1.91.98-3.02-.95.04-2.1.63-2.78 1.43-.61.71-1.15 1.84-1 2.9 1.06.08 2.14-.54 2.8-1.31Z"/></svg>
-          Continue with Apple
-        </button>
-      </div>
-      <p class="muted" style="font-size:13px;margin:8px 0 0">Use the same Google or Apple account the owner invited. You’ll be sent to Google / Apple to approve, then brought straight back here signed in.</p>
-      <div class="oauthDivider"><span>or sign in with email</span></div>
+    <!-- Sign in with an emailed code -->
+    <div id="otpSection">
+      <p class="muted" style="font-size:13px;margin:0 0 10px">Enter your email below, tap <strong style="color:var(--text)">Send sign-in code</strong>, then enter the 6-digit code Supabase emails you. Codes only go to the two household emails.</p>
+      <div class="codeDivider"><span>sign in with an emailed code</span></div>
     </div>
 
     <div class="field"><label>Your email</label><input id="sbEmail" class="input" type="email" placeholder="you@example.com" autocomplete="username"></div>
+    <div class="field"><label>6-digit sign-in code</label><input id="otpCode" class="input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="letter-spacing:.35em;font-size:18px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      <button type="button" class="btn btn-green" id="otpSendBtn" onclick="sendSignInCode()">Send sign-in code</button>
+      <button type="button" class="btn btn-primary" id="otpVerifyBtn" onclick="verifySignInCode()">Verify code &amp; sign in</button>
+    </div>
+    <div class="codeDivider"><span>or sign in with your password</span></div>
     <div class="field"><label>Your password</label><input id="sbPass" class="input" type="password" placeholder="Your Supabase account password" autocomplete="current-password" onkeydown="if(event.key==='Enter') connectSupabase()"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button class="btn btn-green" id="sbConnectBtn" onclick="connectSupabase()">Connect &amp; sign in</button>
       <button class="btn btn-outline" id="sbSignOutBtn" style="display:none" onclick="signOutSupabase()">Sign out</button>
-      <span id="sbStatus" class="muted">Not signed in yet — use Google, Apple, or your email and password. Your password is never saved.</span>
+      <span id="sbStatus" class="muted">Not signed in yet — use an emailed sign-in code, or your email and password. Your password is never saved.</span>
     </div>
     <div style="margin-top:10px">
       <button type="button" class="btn btn-outline btn-sm" id="sbOwnerLink" style="display:none" onclick="toggleSbSetup()">Owner: connection settings</button>
     </div>
-    <p class="muted" style="margin:10px 0 0">No account yet? Ask the owner to add you in Supabase → <strong>Authentication → Users</strong> (or invite you by email). For Google / Apple, sign in with the Google or Apple account that matches that email — see the owner setup below to switch those providers on first. Once signed in, every scan, quantity edit, and removal syncs to the shared list, and the list reloads from Supabase each time you sign in.</p>
+    <p class="muted" style="margin:10px 0 0">Only the two household emails can sign in with a code — if yours isn’t one of them, ask the owner to add you in Supabase → <strong>Authentication → Users</strong> (or invite you by email). Once signed in, every scan, quantity edit, and removal syncs to the shared list, and the list reloads from Supabase each time you sign in.</p>
 
     <details style="margin-top:16px">
-      <summary>Owner setup — turn on Google &amp; Apple sign-in (one time, in Supabase)</summary>
+      <summary>Owner setup — email-code sign-in (one time, in Supabase)</summary>
       <div class="muted" style="font-size:14px;line-height:1.6">
-        <p style="margin:10px 0 6px"><strong style="color:var(--text)">Both providers — first:</strong> In Supabase → <span class="kbd">Authentication → URL Configuration</span>, set <strong>Site URL</strong> to the address where this app lives (e.g. your GitHub Pages URL, or this app’s address) and add that same address under <strong>Redirect URLs</strong> (add <span class="kbd">/**</span> on the end if Supabase asks for a pattern). The buttons rely on this: after approving at Google / Apple, Supabase sends people back to the Site URL, where this app picks up the sign-in automatically. Without this, they’ll be sent back to the wrong place.</p>
-        <p style="margin:8px 0 6px"><strong style="color:var(--text)">Google:</strong></p>
-        <ol style="margin:4px 0 8px;padding-left:20px">
-          <li>In <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console → APIs &amp; Services → Credentials</a>, create an <strong>OAuth client ID</strong> (Web application). If asked, configure the consent screen first (app name + your email is enough).</li>
-          <li>Under <strong>Authorized redirect URIs</strong> on that client, paste the callback shown in Supabase (next step) — it looks like <span class="kbd">https://&lt;your-project&gt;.supabase.co/auth/v1/callback</span>.</li>
-          <li>In Supabase → <span class="kbd">Authentication → Providers → Google</span>, switch it <strong>on</strong> and paste the Google <strong>Client ID</strong> and <strong>Client Secret</strong>. Save.</li>
-        </ol>
-        <p style="margin:8px 0 6px"><strong style="color:var(--text)">Apple:</strong></p>
-        <ol style="margin:4px 0 8px;padding-left:20px">
-          <li>You need a paid Apple Developer account. In <a href="https://developer.apple.com/account/resources/identifiers/list" target="_blank" rel="noopener">Apple Developer → Certificates, Identifiers &amp; Profiles → Identifiers</a>, create an <strong>App ID</strong> and a <strong>Services ID</strong> with <strong>Sign in with Apple</strong> enabled. On the Services ID, set the Return URL to the same Supabase callback: <span class="kbd">https://&lt;your-project&gt;.supabase.co/auth/v1/callback</span>.</li>
-          <li>Create a <strong>Sign in with Apple key</strong> (.p8) under Keys, and note the Key ID and your Team ID.</li>
-          <li>In Supabase → <span class="kbd">Authentication → Providers → Apple</span>, switch it <strong>on</strong> and fill in the Services ID (Client ID), Team ID, Key ID, and the .p8 key contents (Supabase generates the secret from these). Save.</li>
-        </ol>
-        <p style="margin:8px 0 0">Then test each button once yourself. If a button returns an error like “provider is not enabled”, that provider hasn’t been switched on in Supabase yet — email/password still works in the meantime. Apple also requires the app to be served over <strong>https</strong> (GitHub Pages and this app both are).</p>
+        <p style="margin:10px 0 6px"><strong style="color:var(--text)">How sign-in works:</strong> this app sends a 6-digit code to the email typed in, using Supabase Auth email codes. No social sign-in is used. Only the two household emails written into the app’s code are allowed — any other email gets an error and no code is sent.</p>
+        <p style="margin:8px 0 6px"><strong style="color:var(--text)">If no code email arrives:</strong> in Supabase → <span class="kbd">Authentication → Email templates</span>, check that email confirmation / the “Confirm email” template is on, and check the spam folder. The email comes from Supabase, not from this app.</p>
+        <p style="margin:8px 0 0"><strong style="color:var(--text)">Site URL:</strong> in Supabase → <span class="kbd">Authentication → URL Configuration</span>, keep the <strong>Site URL</strong> set to this app’s address (e.g. your GitHub Pages URL) so any links in Supabase emails come back here. Email and password sign-in still works as a fallback below the code sign-in.</p>
       </div>
     </details>
 
@@ -364,9 +339,8 @@ let sbAccessToken = null; // signed-in session access_token — used as Bearer f
 const SB_BUILT_IN = { url: '', key: '' };
 
 function builtinSbConfig(){
-  const url = (https://cawzgipfkkqnhiwzrupo.supabase.co
- || '').trim().replace(/\/$/, '');
-  const key = (sb_publishable_gpoxZIh_Y6w86s99D_hsOQ_SIpQIAU0 || '').trim();
+  const url = ("https://cawzgipfkkqnhiwzrupo.supabase.co" || '').trim().replace(/\/$/, '');
+  const key = ("sb_publishable_gpoxZIh_Y6w86s99D_hsOQ_SIpQIAU0" || '').trim();
   if(url && key && key.indexOf('sb_secret_') !== 0) return { url: url, key: key };
   return null;
 }
@@ -388,7 +362,7 @@ function applySbVisibility(){
   if(configured && !sbUser){
     const st = document.getElementById('sbStatus');
     if(st && (st.textContent.indexOf('Not signed in') === 0 || st.textContent.indexOf('Not connected') === 0)){
-      st.textContent = 'This copy is already connected to your household’s Supabase project — just sign in with Google, Apple, or your email and password. No URL or key needed, and your password is never saved.';
+      st.textContent = 'This copy is already connected to your household’s Supabase project — just sign in with an emailed code, or your email and password. No URL or key needed, and your password is never saved.';
     }
     const pillText = document.getElementById('connPillText');
     if(pillText && pillText.textContent.indexOf('Preview mode') === 0) pillText.textContent = 'Shared list — sign in below to sync';
@@ -571,7 +545,7 @@ function setConnUI(mode, email){
     document.getElementById('sbConnectBtn').textContent = 'Connect & sign in';
   }
 }
-/* ===== Google & Apple sign-in (Supabase OAuth) ===== */
+/* ===== Shared Supabase client ===== */
 function getEffectiveSbConfig(){
   const built = builtinSbConfig();
   if(built) return built;
@@ -583,10 +557,6 @@ function getEffectiveSbConfig(){
   if(fUrl && fKey && fKey.indexOf('sb_secret_') !== 0) return { url: fUrl, key: fKey };
   return null;
 }
-/* No redirectTo is passed to Supabase OAuth on purpose: Supabase sends
-   people back to the Site URL configured in Authentication → URL
-   Configuration (see Owner setup below), which the owner sets to this
-   app's address. That keeps this script free of any own-URL handling. */
 let sbCompleting = false;
 let sbLastCompletedToken = null;
 async function completeSignIn(session){
@@ -625,43 +595,77 @@ function ensureSbClient(cfg){
   try{ sb.auth.onAuthStateChange(function(event, session){ if(session && session.access_token){ sbAccessToken = session.access_token; if(session.user) sbUser = session.user; if(event === 'SIGNED_IN' && !sbCompleting){ completeSignIn(session); } } }); }catch(e){}
   return sb;
 }
-async function signInWithProvider(provider){
+/* ===== Email-code sign-in (Supabase OTP) =====
+   Only the two household emails below may receive a code.
+   Any other email is rejected in the app and never calls signInWithOtp. */
+const ALLOWED_OTP_EMAILS = ['stanleybwoi@gmail.com', 'shennel.jordan@gmail.com'];
+function otpEmailValue(){ const el = document.getElementById('sbEmail'); return (el ? el.value : '').trim().toLowerCase(); }
+function isAllowedOtpEmail(email){ return ALLOWED_OTP_EMAILS.indexOf(email) !== -1; }
+async function sendSignInCode(){
   const status = document.getElementById('sbStatus');
-  const label = provider === 'apple' ? 'Apple' : 'Google';
-  const btnG = document.getElementById('btnGoogle');
-  const btnA = document.getElementById('btnApple');
-  const cfg = getEffectiveSbConfig();
-  if(!cfg){
-    // Secret-key guard for the field fallback
-    const keyEl = document.getElementById('sbKey');
-    if(keyEl && keyEl.value.trim().indexOf('sb_secret_') === 0){ if(status) status.textContent = 'That’s the secret key — Supabase blocks it in browsers. Use the publishable key (sb_publishable_…) instead.'; return; }
-    if(status) status.textContent = 'This copy isn’t set up yet — the owner needs to add the household connection first (see Owner setup above) before Google / Apple sign-in can work.';
-    showToast('Owner setup needed first');
+  const email = otpEmailValue();
+  if(!isAllowedOtpEmail(email)){
+    if(status) status.textContent = 'That email is not on the household list — sign-in codes are only sent to the two household emails.';
+    showToast('Email not allowed');
     return;
   }
+  const cfg = getEffectiveSbConfig();
+  if(!cfg){ if(status) status.textContent = 'This copy isn’t set up yet — the owner needs to add the household connection first.'; return; }
   if(!(window.supabase && window.supabase.createClient)){ if(status) status.textContent = 'The sign-in library didn’t load — check your connection and reload the page.'; return; }
-  const rememberEl = document.getElementById('sbRemember');
-  if(rememberEl && rememberEl.checked){ saveSbConfig(false); }
   if(!ensureSbClient(cfg)){ if(status) status.textContent = 'Could not start sign-in — reload the page and try again.'; return; }
-  if(btnG) btnG.disabled = true;
-  if(btnA) btnA.disabled = true;
-  if(status) status.textContent = 'Taking you to ' + label + ' to sign in… approve there and you’ll be brought back here signed in.';
+  const btn = document.getElementById('otpSendBtn'); if(btn) btn.disabled = true;
+  if(status) status.textContent = 'Sending a 6-digit code to ' + email + '…';
   try{
-    const opts = {};
-    if(provider === 'google') opts.queryParams = { prompt: 'select_account' };
-    const result = await sb.auth.signInWithOAuth({ provider: provider, options: opts });
+    const result = await sb.auth.signInWithOtp({ email: email, options: { shouldCreateUser: true } });
     if(result && result.error){
-      if(btnG) btnG.disabled = false;
-      if(btnA) btnA.disabled = false;
-      const msg = result.error.message || '';
-      if(status) status.textContent = label + ' sign-in couldn’t start: ' + msg + (msg.toLowerCase().indexOf('provider') !== -1 || msg.toLowerCase().indexOf('enabled') !== -1 ? ' — the owner needs to switch ' + label + ' on in Supabase → Authentication → Providers (see Owner setup below).' : '');
+      if(status) status.textContent = 'Couldn’t send the code: ' + result.error.message;
+      if(btn) btn.disabled = false;
       return;
     }
-    // On success the browser navigates away to Google / Apple; nothing else to do here.
+    if(status) status.textContent = 'Code sent to ' + email + ' — check your email, then enter the 6-digit code below.';
+    showToast('Code sent — check your email');
+    const codeEl = document.getElementById('otpCode'); if(codeEl) codeEl.focus();
   }catch(e){
-    if(btnG) btnG.disabled = false;
-    if(btnA) btnA.disabled = false;
-    if(status) status.textContent = label + ' sign-in couldn’t start — check your connection and try again. If it keeps failing, the owner may still need to enable ' + label + ' in Supabase (see Owner setup below).';
+    if(status) status.textContent = 'Couldn’t send the code — check your connection and try again.';
+    if(btn) btn.disabled = false;
+  }finally{
+    if(btn) btn.disabled = false;
+  }
+}
+async function verifySignInCode(){
+  const status = document.getElementById('sbStatus');
+  const email = otpEmailValue();
+  const codeEl = document.getElementById('otpCode');
+  const code = (codeEl ? codeEl.value : '').trim();
+  if(!isAllowedOtpEmail(email)){
+    if(status) status.textContent = 'That email is not on the household list — sign-in codes are only sent to the two household emails.';
+    return;
+  }
+  if(!/^\d{6}$/.test(code)){ if(status) status.textContent = 'Enter the 6-digit code from the email.'; return; }
+  let cfg = getEffectiveSbConfig();
+  if(!cfg){ if(status) status.textContent = 'This copy isn’t set up yet — the owner needs to add the household connection first.'; return; }
+  if(!(window.supabase && window.supabase.createClient)){ if(status) status.textContent = 'The sign-in library didn’t load — check your connection and reload the page.'; return; }
+  if(!ensureSbClient(cfg)){ if(status) status.textContent = 'Could not start sign-in — reload the page and try again.'; return; }
+  const btn = document.getElementById('otpVerifyBtn'); if(btn) btn.disabled = true;
+  if(status) status.textContent = 'Verifying your code…';
+  try{
+    const result = await sb.auth.verifyOtp({ email: email, token: code, type: 'email' });
+    if(result && result.error){
+      if(status) status.textContent = 'That code didn’t work: ' + result.error.message + ' — check the code or send a new one.';
+      if(btn) btn.disabled = false;
+      return;
+    }
+    if(!result.data || !result.data.session || !result.data.session.access_token){
+      if(status) status.textContent = 'Verification did not return a session — send a new code and try again.';
+      if(btn) btn.disabled = false;
+      return;
+    }
+    if(result.data.user) sbUser = result.data.user;
+    await completeSignIn(result.data.session);
+  }catch(e){
+    if(status) status.textContent = 'Couldn’t verify the code — check your connection and try again.';
+  }finally{
+    if(btn) btn.disabled = false;
   }
 }
 async function initSbAuthFromReturn(){
@@ -699,7 +703,7 @@ async function connectSupabase(){
   if(rememberEl && rememberEl.checked){ saveSbConfig(false); }
   sbAccessToken = null;
   if(!(window.supabase && window.supabase.createClient)){ status.textContent = 'The sign-in library didn’t load — check your connection and reload the page.'; sbConfig = null; return; }
-  // Reuse the shared client so the OAuth return handler and email sign-in share one session.
+  // Reuse the shared client so code sign-in and email sign-in share one session.
   sb = null; ensureSbClient(cfg);
   let auth;
   try{ auth = await sb.auth.signInWithPassword({ email: email, password: pass }); }
@@ -708,14 +712,12 @@ async function connectSupabase(){
   if(!auth.data || !auth.data.session || !auth.data.session.access_token){ status.textContent = 'Sign-in did not return a session — try again, or check email confirmation in Supabase → Authentication.'; sb = null; sbConfig = null; return; }
   if(auth.data.user) sbUser = auth.data.user;
   // Probe + load + live UI all run through completeSignIn, with the session
-  // token as Bearer so RLS (authenticated only) passes — same path OAuth uses.
+  // token as Bearer so RLS (authenticated only) passes — same path code sign-in uses.
   await completeSignIn(auth.data.session);
 }
 async function signOutSupabase(){
   if(sb){ try{ await sb.auth.signOut(); }catch(e){} }
   sb = null; sbUser = null; sbAccessToken = null; sbConfig = null; sbLastCompletedToken = null;
-  const btnG = document.getElementById('btnGoogle'); if(btnG) btnG.disabled = false;
-  const btnA = document.getElementById('btnApple'); if(btnA) btnA.disabled = false;
   setConnUI('preview');
   // Signing out ends the session only — it never removes the built-in
   // connection or a URL & key saved on this device, so signing back in
@@ -723,7 +725,7 @@ async function signOutSupabase(){
   loadSavedSbConfig();
   applySbVisibility();
   if(sbIsConfigured()){
-    document.getElementById('sbStatus').textContent = 'Signed out. Sign back in anytime with Google, Apple, or your email and password — no setup needed. Until then, your list here is kept only while this tab is open.';
+    document.getElementById('sbStatus').textContent = 'Signed out. Sign back in anytime with an emailed code, or your email and password — no setup needed. Until then, your list here is kept only while this tab is open.';
   }else{
     document.getElementById('sbStatus').textContent = 'Signed out — back to preview mode. Your list here is kept only while this tab is open.';
   }
@@ -966,7 +968,7 @@ document.addEventListener('keydown', e=>{
 // the URL/key setup fields stay hidden — everyone just signs in.
 loadSavedSbConfig();
 applySbVisibility();
-// Pick up a Google / Apple return (or a session already stored by
+// Pick up a session already stored by
 // Supabase) and finish signing in with its session token.
 initSbAuthFromReturn();
 (function(){
