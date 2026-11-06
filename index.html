@@ -31,7 +31,7 @@ h1{font-family:"Bricolage Grotesque",sans-serif;font-size:clamp(28px,5vw,44px);l
 .sub{color:var(--muted);max-width:560px;font-size:15px}
 .pill{display:inline-flex;align-items:center;gap:7px;background:var(--amber-bg);color:var(--amber);border:1px solid #fde68a;padding:7px 11px;border-radius:999px;font-size:13px;font-weight:700}
 .dot{width:8px;height:8px;border-radius:50%;background:#f59e0b}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}
+.stats{display:grid;grid-template-columns:1fr;gap:10px;margin:16px 0}
 .stat{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px}
 .stat b{font-size:26px;display:block;line-height:1}
 .stat span{font-size:13px;color:var(--muted)}
@@ -42,7 +42,7 @@ h1{font-family:"Bricolage Grotesque",sans-serif;font-size:clamp(28px,5vw,44px);l
 .modeBtn.active-out{background:#dc2626;color:white;border-color:#dc2626}
 .modeBtn.active-check{background:#2563eb;color:white;border-color:#2563eb}
 .scannerGrid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-top:16px}
-@media(max-width:760px){.scannerGrid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:760px){.scannerGrid{grid-template-columns:1fr}.stats{grid-template-columns:1fr}}
 .videoBox{background:#0a0f0a;border-radius:16px;overflow:hidden;position:relative;min-height:220px;display:flex;align-items:center;justify-content:center;color:#a7b8a8;text-align:center;padding:12px}
 video{width:100%;height:260px;object-fit:cover;display:none;background:black}
 .scanLine{position:absolute;left:12%;right:12%;top:50%;height:2px;background:#4ade80;box-shadow:0 0 18px #4ade80;display:none}
@@ -100,8 +100,6 @@ summary{cursor:pointer;font-weight:800}
   </div>
 
   <div class="stats">
-    <div class="stat"><b id="statDistinct">0</b><span>different items</span></div>
-    <div class="stat"><b id="statUnits">0</b><span>total units at home</span></div>
     <div class="stat"><b id="statLow">0</b><span>running low (0–1 left)</span></div>
   </div>
 
@@ -165,6 +163,17 @@ summary{cursor:pointer;font-weight:800}
     </div>
   </section>
 
+  <!-- SEARCH INVENTORY: opens a search panel; the full list only shows
+       while searching, per the backend-only list rule. -->
+  <button class="btn btn-outline" style="width:100%;margin-top:16px" onclick="openSearch()">🔍 Search inventory</button>
+  <div id="searchPanel" style="display:none;margin-top:12px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px">
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="search" class="input" style="flex:1;min-width:0" placeholder="Search by name or brand…" oninput="render()">
+      <button class="btn btn-outline btn-sm" onclick="closeSearch()">Close</button>
+    </div>
+    <p class="muted" style="margin:8px 0 0;font-size:13px">Type a name or brand — results show below. Leave it blank to browse everything on hand.</p>
+  </div>
+
   <!-- LAST SCANNED ITEM: the only product card shown on the page (the full
        list below is backend-only). Hidden until something is scanned/added. -->
   <div id="lastItemCard" style="display:none;margin-top:16px"></div>
@@ -172,7 +181,6 @@ summary{cursor:pointer;font-weight:800}
   <!-- INVENTORY + SIDE -->
   <div style="display:none">
     <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-size:24px">Your inventory</h2>
-    <input id="search" class="input" style="max-width:320px" placeholder="Search milk, pasta, eggs…" oninput="render()">
   </div>
   <div class="toolbar" id="filters" style="display:none">
     <button class="chip active" data-f="all" onclick="setFilter('all',this)">All</button>
@@ -1131,12 +1139,20 @@ function stopScanner(){
 }
 
 function renderStats(){
-  const distinct=state.items.length;
-  const units=state.items.reduce((a,i)=>a+i.qty,0);
   const low=state.items.filter(i=>i.qty<=1).length;
-  document.getElementById('statDistinct').textContent=distinct;
-  document.getElementById('statUnits').textContent=units;
-  document.getElementById('statLow').textContent=low;
+  var el=document.getElementById('statLow'); if(el) el.textContent=low;
+}
+function openSearch(){
+  var panel=document.getElementById('searchPanel'); if(panel) panel.style.display='block';
+  var wrap=document.getElementById('itemsWrap'); if(wrap) wrap.style.display='block';
+  render();
+  var q=document.getElementById('search'); if(q) q.focus();
+}
+function closeSearch(){
+  var panel=document.getElementById('searchPanel'); if(panel) panel.style.display='none';
+  var q=document.getElementById('search'); if(q) q.value='';
+  var wrap=document.getElementById('itemsWrap'); if(wrap) wrap.style.display='none';
+  render();
 }
 // Last-scanned card — the only product shown on the page. It clones the
 // matching article from the hidden backend list, so it is identical to the
