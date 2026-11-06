@@ -137,17 +137,6 @@ summary{cursor:pointer;font-weight:800}
             <button class="btn btn-primary" onclick="handleManualBarcode()">Lookup</button>
           </div>
         </div>
-        <div id="lookupCard" style="display:none;background:var(--surface2);border-radius:14px;padding:12px">
-          <div style="display:flex;gap:12px;align-items:center">
-            <img id="lookupImg" alt="" style="width:52px;height:52px;object-fit:cover;border-radius:10px;background:white;display:none">
-            <div>
-              <div id="lookupName" style="font-weight:800;line-height:1.2"></div>
-              <div id="lookupBrand" class="muted"></div>
-              <div id="lookupBarcode" class="muted" style="font-family:monospace;font-size:12px"></div>
-            </div>
-          </div>
-          <button class="btn btn-green btn-sm" style="margin-top:10px;width:100%" onclick="confirmLookup()">Confirm — add with current mode</button>
-        </div>
       </div>
     </div>
   </section>
@@ -733,7 +722,6 @@ async function signOutSupabase(){
   }
   showToast('Signed out');
 }
-let pendingLookup = null;
 let codeReader = null;
 let scanning = false;
 
@@ -772,6 +760,16 @@ function renderLog(){
 }
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
 
+// Product lookup cache: barcode -> found item object, or null if not found anywhere.
+// Persisted in localStorage so a barcode is never looked up twice — UPCitemdb's
+// free trial is 100 requests/day shared per IP, and a big first scan-in could burn it fast.
+let lookupCache = {};
+try{ lookupCache = JSON.parse(localStorage.getItem('household-inventory-lookup-cache-v1') || '{}') || {}; }catch(e){ lookupCache = {}; }
+function cacheLookup(barcode, result){
+  lookupCache[barcode] = result;
+  try{ localStorage.setItem('household-inventory-lookup-cache-v1', JSON.stringify(lookupCache)); }catch(e){}
+}
+
 async function lookupOFF(barcode){
   try{
     const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`);
@@ -784,6 +782,31 @@ async function lookupOFF(barcode){
   return null;
 }
 
+// Fallback for non-food / general products Open Food Facts does not carry.
+// Free trial, no API key: 100 requests/day, 6/min burst, shared per IP.
+// NOTE: UPCitemdb is reported to restrict CORS origins, so this may fail from a
+// browser even though it works via curl — lookupProduct treats any failure as "not found".
+async function lookupUPCitemdb(barcode){
+  try{
+    const r=await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`);
+    const j=await r.json();
+    const it=j && j.items && j.items[0];
+    if(it){
+      return { barcode, name:it.title||'Unknown product', brand:it.brand||'', image:(it.images && it.images[0])||'', location:'Pantry' };
+    }
+  }catch(e){}
+  return null;
+}
+
+async function lookupProduct(barcode){
+  if(Object.prototype.hasOwnProperty.call(lookupCache, barcode)) return lookupCache[barcode];
+  const off=await lookupOFF(barcode);
+  if(off){ cacheLookup(barcode, off); return off; }
+  const upc=await lookupUPCitemdb(barcode);
+  cacheLookup(barcode, upc);
+  return upc;
+}
+
 async function handleBarcode(barcode, source){
   barcode=String(barcode).trim(); if(!barcode) return;
   const existing=state.items.find(i=>i.barcode===barcode);
@@ -792,36 +815,30 @@ async function handleBarcode(barcode, source){
     showToast(`${existing.name} — now ${existing.qty}`);
     return;
   }
-  // not in inventory yet
+  // Scan-out of something not in the list: never add a qty-0 item.
+  if(state.mode==='out'){ showToast('Not in your list yet — scan it in first'); return; }
+  // not in inventory yet — look it up, then add immediately (no Confirm step).
+  // The toast names the product found (OFF or UPCitemdb), never a generic
+  // "Found …" message with no product name.
   showToast('Looking up barcode…');
-  const found=await lookupOFF(barcode);
+  const found=await lookupProduct(barcode);
   if(found){
-    pendingLookup=found;
-    document.getElementById('lookupCard').style.display='block';
-    document.getElementById('lookupName').textContent=found.name;
-    document.getElementById('lookupBrand').textContent=found.brand||'';
-    document.getElementById('lookupBarcode').textContent=barcode;
-    const img=document.getElementById('lookupImg');
-    if(found.image){ img.src=found.image; img.style.display='block'; } else img.style.display='none';
-    showToast('Found on Open Food Facts — confirm to add');
+    const item={ id:Date.now().toString(), ...found, qty:1 };
+    state.items.unshift(item);
+    log(`${item.name} added`, 1);
+    render(); showToast(`${item.name} added · qty 1`);
+    await sbUpsertItem(item); sbWriteLog(item, 1); render();
   }else{
-    // fallback manual
+    // Found nowhere: auto-open the Add manually form (it is collapsed by default),
+    // prefill the scanned barcode and focus the name field.
+    var mw=document.getElementById('manualFormWrap'); if(mw) mw.style.display='block';
     document.getElementById('mBarcode').value=barcode;
-    document.getElementById('mName').focus();
+    document.getElementById('mName').value='';
     document.getElementById('mName').placeholder='Not found — type the name once, we’ll remember it';
-    showToast('Not in Open Food Facts — add the name below once');
+    document.getElementById('mName').focus();
+    showToast('Not found — type the name once');
     window.scrollTo({top: document.getElementById('mName').getBoundingClientRect().top + window.scrollY - 120, behavior:'smooth'});
   }
-}
-async function confirmLookup(){
-  if(!pendingLookup) return;
-  const qty = state.mode==='in'?1:0;
-  const item={ id:Date.now().toString(), ...pendingLookup, qty };
-  state.items.unshift(item);
-  log(`${item.name} added`, qty);
-  pendingLookup=null; document.getElementById('lookupCard').style.display='none';
-  render(); showToast(`${item.name} added · qty ${qty}`);
-  await sbUpsertItem(item); sbWriteLog(item, qty); render();
 }
 function applyDelta(item, delta){
   item.qty=Math.max(0, item.qty+delta);
