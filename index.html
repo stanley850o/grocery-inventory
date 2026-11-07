@@ -271,16 +271,16 @@ summary{cursor:pointer;font-weight:800}
     </div>
     </div><!-- /sbSetupFields -->
 
-    <!-- Sign in with an emailed link (code as fallback) -->
+    <!-- Sign in with a 6-digit code emailed to you (the link in the same email is a fallback) -->
     <div id="otpSection">
-      <div class="codeDivider"><span>sign in with an emailed link</span></div>
+      <div class="codeDivider"><span>sign in with a 6-digit code</span></div>
     </div>
 
     <div class="field"><label>Your email</label><input id="sbEmail" class="input" type="email" placeholder="you@example.com" autocomplete="username"></div>
-    <div class="field"><label>6-digit sign-in code (only if your email shows one)</label><input id="otpCode" class="input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="letter-spacing:.35em;font-size:18px"></div>
+    <div class="field"><label>6-digit sign-in code</label><input id="otpCode" class="input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="letter-spacing:.35em;font-size:18px"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-      <button type="button" class="btn btn-green" id="otpSendBtn" onclick="sendSignInCode()">Send sign-in link</button>
-      <button type="button" class="btn btn-primary" id="otpVerifyBtn" onclick="verifySignInCode()">Verify code &amp; sign in</button>
+      <button type="button" class="btn btn-green" id="otpSendBtn" onclick="sendSignInCode()">Send 6-digit code</button>
+      <button type="button" class="btn btn-primary" id="otpVerifyBtn" onclick="verifySignInCode()">Verify code</button>
     </div>
     <label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:14px;line-height:1.4;margin-bottom:12px">
       <input type="checkbox" id="sbRememberDevice" checked style="width:18px;height:18px;margin-top:2px;flex-shrink:0;accent-color:var(--green)">
@@ -291,7 +291,7 @@ summary{cursor:pointer;font-weight:800}
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button class="btn btn-green" id="sbConnectBtn" onclick="connectSupabase()">Connect &amp; sign in</button>
       <button class="btn btn-outline" id="sbSignOutBtn" style="display:none" onclick="signOutSupabase()">Sign out</button>
-      <span id="sbStatus" class="muted">Not signed in yet — use an emailed sign-in code, or your email and password. Your password is never saved.</span>
+      <span id="sbStatus" class="muted">Not signed in yet — get a 6-digit code by email, or sign in with your email and password. Your password is never saved.</span>
     </div>
     <div style="margin-top:10px">
       <button type="button" class="btn btn-outline btn-sm" id="sbOwnerLink" style="display:none" onclick="toggleSbSetup()">Owner: connection settings</button>
@@ -361,7 +361,7 @@ function applySbVisibility(){
   if(configured && !sbUser){
     const st = document.getElementById('sbStatus');
     if(st && (st.textContent.indexOf('Not signed in') === 0 || st.textContent.indexOf('Not connected') === 0)){
-      st.textContent = 'This copy is already connected to your household’s Supabase project — just sign in with a link emailed to you, or your email and password. No URL or key needed, and your password is never saved.';
+      st.textContent = 'This copy is already connected to your household’s Supabase project — just sign in with a 6-digit code emailed to you, or your email and password. No URL or key needed, and your password is never saved.';
     }
     const pillText = document.getElementById('connPillText');
     if(pillText && pillText.textContent.indexOf('Preview mode') === 0) pillText.textContent = 'Shared list — sign in below to sync';
@@ -658,7 +658,7 @@ async function sendSignInCode(){
   if(!(window.supabase && window.supabase.createClient)){ if(status) status.textContent = 'The sign-in library didn’t load — check your connection and reload the page.'; return; }
   if(!ensureSbClient(cfg)){ if(status) status.textContent = 'Could not start sign-in — reload the page and try again.'; return; }
   const btn = document.getElementById('otpSendBtn'); if(btn) btn.disabled = true;
-  if(status) status.textContent = 'Sending a sign-in link to ' + email + '…';
+  if(status) status.textContent = 'Sending a 6-digit code to ' + email + '…';
   try{
     const result = await sb.auth.signInWithOtp({ email: email, options: { shouldCreateUser: true, emailRedirectTo: 'https://stanley850o.github.io/grocery-inventory/' } });
     if(result && result.error){
@@ -666,8 +666,8 @@ async function sendSignInCode(){
       if(btn) btn.disabled = false;
       return;
     }
-    if(status) status.textContent = 'Check your email and tap the link to sign in — it will bring you back to the app signed in. If your email also shows a 6-digit code, you can enter it below instead.';
-    showToast('Sign-in link sent — check your email');
+    if(status) status.textContent = 'Enter the 6-digit code we just sent to ' + email + '. Or tap the link in the same email instead.';
+    showToast('6-digit code sent — check your email');
     const codeEl = document.getElementById('otpCode'); if(codeEl) codeEl.focus();
   }catch(e){
     if(status) status.textContent = 'Couldn’t send the code — check your connection and try again.';
@@ -772,7 +772,7 @@ async function signOutSupabase(){
   loadSavedSbConfig();
   applySbVisibility();
   if(sbIsConfigured()){
-    document.getElementById('sbStatus').textContent = 'Signed out. Sign back in anytime with a link emailed to you, or your email and password — no setup needed. Until then, your list here is kept only while this tab is open.';
+    document.getElementById('sbStatus').textContent = 'Signed out. Sign back in anytime with a 6-digit code emailed to you, or your email and password — no setup needed. Until then, your list here is kept only while this tab is open.';
   }else{
     document.getElementById('sbStatus').textContent = 'Signed out — back to preview mode. Your list here is kept only while this tab is open.';
   }
