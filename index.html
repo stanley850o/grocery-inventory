@@ -938,6 +938,34 @@ async function lookupProduct(barcode){
   return upc;
 }
 
+// Name-based picture lookup for MANUAL entries only. Hand-typed items used
+// to show the 🥫 emoji as their picture, which on iOS looks exactly like a
+// tomato-paste can — so every manual item looked like the wrong product.
+// Now a manual save tries Open Food Facts search-by-name (same free,
+// keyless, CORS-safe OFF family already used for barcode lookup) and takes
+// the first result's picture ONLY if it is a real http(s) URL. Best-effort:
+// 4s timeout, any failure / no picture returns '' and the save goes ahead
+// with a blank picture. Never throws, never blocks or fails the save, and
+// never guesses a picture.
+async function lookupImageByName(name, brand){
+  try{
+    const q=encodeURIComponent([name, brand].filter(Boolean).join(' ').trim());
+    if(!q) return '';
+    const ctrl=new AbortController();
+    const timer=setTimeout(function(){ ctrl.abort(); }, 4000);
+    try{
+      const r=await fetch('https://world.openfoodfacts.org/cgi/search.pl?search_terms='+q+'&json=1&page_size=3', { signal: ctrl.signal });
+      const j=await r.json();
+      const prods=(j && j.products) || [];
+      for(const p of prods){
+        const u=p.image_small_url || p.image_front_small_url || p.image_url || '';
+        if(typeof u==='string' && /^https?:\/\//.test(u)) return u;
+      }
+    }finally{ clearTimeout(timer); }
+  }catch(e){}
+  return '';
+}
+
 // CHECK mode: show quantity on hand + location for a scanned item, without
 // changing anything. The camera keeps running; the card is replaced by the
 // next scan, or dismissed with Close.
@@ -1040,7 +1068,12 @@ async function addManual(e){
   let saved = existing;
   if(existing){ existing.qty+=qty; log(`${existing.name} +${qty} (manual)`, qty); }
   else{
-    saved = { id:Date.now().toString(), barcode, name, brand:document.getElementById('mBrand').value.trim(), qty, location:document.getElementById('mLoc').value, image:'' };
+    const brand=document.getElementById('mBrand').value.trim();
+    // Best-effort picture by name (Open Food Facts search, 4s timeout
+    // inside lookupImageByName). Any failure / no picture leaves image ''
+    // and the save goes ahead exactly as before — never a guessed picture.
+    const img=await lookupImageByName(name, brand);
+    saved = { id:Date.now().toString(), barcode, name, brand, qty, location:document.getElementById('mLoc').value, image:img };
     state.items.unshift(saved);
     log(`${name} added manually`, qty);
   }
@@ -1228,7 +1261,7 @@ function render(){
   wrap.innerHTML=`<div class="items">${list.map(i=>`
     <article class="item" data-id="${i.id}">
       <div class="itemTop">
-        <div class="thumb">${i.image?`<img src="${escapeHtml(i.image)}" alt="">`:'🥫'}</div>
+        <div class="thumb">${i.image?`<img src="${escapeHtml(i.image)}" alt="">`:''}</div>
         <div style="flex:1;min-width:0">
           <div style="display:flex;gap:6px;align-items:start;justify-content:space-between">
             <strong style="line-height:1.2">${escapeHtml(i.name)}</strong>
