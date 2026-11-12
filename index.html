@@ -485,13 +485,19 @@ async function sbLoadItems(){
 async function sbLoadLogs(){
   try{
     await sbRefreshAccessToken();
-    const res = await fetch(sbConfig.url + '/rest/v1/inventory_log?select=item_name,delta,created_at&order=created_at.desc&limit=12', { headers: sbHeaders() });
+    const res = await fetch(sbConfig.url + '/rest/v1/inventory_log?select=item_name,delta,mode,created_at&order=created_at.desc&limit=12', { headers: sbHeaders() });
     if(!res.ok) return;
     const rows = await res.json();
     const clearedAt = logClearedAt();
     const fresh = rows.filter(r => !clearedAt || new Date(r.created_at).getTime() > clearedAt);
     if(fresh.length){
-      state.logs = fresh.map(r => ({ msg: r.item_name || 'Item', time: new Date(r.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), delta: r.delta }));
+      // A CHECK scan writes a zero-delta row with mode 'check': show it as
+      // a "checked ✓" entry, never as a bare name with no delta. A
+      // check-card quantity fix also has mode 'check' but a NON-zero delta
+      // — that keeps the normal name + ±delta rendering.
+      state.logs = fresh.map(r => (r.mode==='check' && !r.delta)
+        ? { msg: (r.item_name || 'Item') + ' checked', time: new Date(r.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), delta: 0, mark: '✓' }
+        : { msg: r.item_name || 'Item', time: new Date(r.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), delta: r.delta, mark: '' });
       renderLog();
     }
   }catch(e){}
@@ -816,14 +822,16 @@ function setFilter(f,el){
   state.filter=f;
   document.querySelectorAll('#filters .chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); render();
 }
-function log(msg, delta){
-  state.logs.unshift({msg, time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), delta});
+function log(msg, delta, mark){
+  // mark is an optional badge shown where the ±delta normally goes, e.g.
+  // '✓' for a CHECK scan. It never changes the quantity.
+  state.logs.unshift({msg, time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), delta, mark: mark||''});
   renderLog();
 }
 function renderLog(){
   const el=document.getElementById('logList');
   if(!state.logs.length){ el.innerHTML='<li class="muted">No scans yet — try scanning a barcode above.</li>'; return;}
-  el.innerHTML=state.logs.slice(0,12).map(l=>`<li><span>${escapeHtml(l.msg)}</span><span class="muted">${l.time} ${l.delta? '· '+(l.delta>0?'+':'')+l.delta:''}</span></li>`).join('');
+  el.innerHTML=state.logs.slice(0,12).map(l=>`<li><span>${escapeHtml(l.msg)}</span><span class="muted">${l.time} ${l.mark? '· '+escapeHtml(l.mark) : (l.delta? '· '+(l.delta>0?'+':'')+l.delta:'')}</span></li>`).join('');
 }
 // Clear recent activity — two-tap confirm, no modal. Only the log is cleared,
 // never the inventory items. The clear time is remembered on this device so
@@ -1001,10 +1009,14 @@ function checkAdjust(delta){
 async function handleBarcode(barcode, source){
   barcode=String(barcode).trim(); if(!barcode) return;
   const existing=state.items.find(i=>i.barcode===barcode);
-  // Check mode: never change quantity, never write, never look anything up.
+  // Check mode: never change quantity, never write a ±1 row, never look
+  // anything up. A check scan DOES leave a trace: a "checked ✓" entry in
+  // Recent activity — local log plus a shared-log row with delta 0 and
+  // mode 'check' — so checking is visible without ever looking like stock
+  // was added or removed.
   if(state.mode==='check'){
-    if(existing){ showCheckCard(existing); showToast(`${existing.name} — ${existing.qty} on hand · ${existing.location||'Pantry'}`); }
-    else{ showCheckCard(null, barcode); showToast('Not in your list yet — 0 on hand'); }
+    if(existing){ showCheckCard(existing); log(existing.name + ' checked', 0, '✓'); sbWriteLog(existing, 0); showToast(`${existing.name} — ${existing.qty} on hand · ${existing.location||'Pantry'}`); }
+    else{ showCheckCard(null, barcode); log('Checked ' + barcode + ' — not in your list', 0, '✓'); showToast('Not in your list yet — 0 on hand'); }
     return;
   }
   if(existing){
