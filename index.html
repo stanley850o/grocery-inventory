@@ -806,6 +806,11 @@ function setMode(m){
     : m==='out'
     ? 'You’re scanning <strong style="color:#dc2626">OUT</strong> — scan when you open, use, or finish something so the count drops by 1.'
     : 'You’re checking <strong style="color:#2563eb">QUANTITY</strong> — scan to see how many are on hand and where they are. Nothing is added or removed.';
+  // Re-render so every "Scan again" button label matches the new mode.
+  // Without this the cards kept the previous mode's label — in CHECK mode
+  // they could still read "Scan again (+1)" even though tapping one only
+  // checks, which looked like checking adds stock.
+  render();
 }
 function setFilter(f,el){
   state.filter=f;
@@ -1041,9 +1046,16 @@ function applyDelta(item, delta){
   sbUpsertItem(item); sbWriteLog(item, delta);
 }
 function changeQty(id, delta){
+  // In CHECK mode the card +/− buttons must not change stock: checking is
+  // read-only ("Nothing is added or removed"). The check card's own −/+
+  // (checkAdjust) stays the one deliberate way to fix a count.
+  if(state.mode==='check'){ showToast('You’re in CHECK mode — nothing is added or removed. Use the check card’s − / + to fix a count.'); return; }
   const it=state.items.find(i=>i.id===id); if(!it) return; applyDelta(it, delta);
 }
 function setQty(id, val){
+  // Same guard as changeQty: typing a quantity on a card must not change
+  // stock while checking.
+  if(state.mode==='check'){ showToast('You’re in CHECK mode — nothing is added or removed. Use the check card’s − / + to fix a count.'); render(); return; }
   const it=state.items.find(i=>i.id===id); if(!it) return;
   setLastItem(it.id);
   const n=parseInt(val,10); if(isNaN(n)) {render(); return;}
