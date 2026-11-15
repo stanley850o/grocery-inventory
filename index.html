@@ -84,6 +84,11 @@ label{font-size:13px;font-weight:700;letter-spacing:.02em}
 .log li{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
 .toast{position:fixed;left:50%;transform:translateX(-50%) translateY(20px);bottom:18px;background:#17211a;color:white;padding:13px 16px;border-radius:999px;font-weight:700;box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:.25s;z-index:50;max-width:92vw;text-align:center}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.codeSentOverlay{position:fixed;inset:0;background:rgba(15,20,16,.55);display:none;align-items:center;justify-content:center;z-index:60;padding:20px}
+.codeSentOverlay.show{display:flex}
+.codeSentCard{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:26px 22px;box-shadow:var(--shadow);max-width:360px;width:100%;text-align:center}
+.codeSentCard h2{margin:0 0 8px;font-size:24px;font-family:"Bricolage Grotesque",sans-serif}
+.codeSentCard p{margin:0 0 18px;color:var(--muted);font-size:15px;word-break:break-word}
 pre{background:#0f1a12;color:#d1fae5;padding:14px;border-radius:12px;overflow:auto;font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
 details{border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--surface)}
 summary{cursor:pointer;font-weight:800}
@@ -304,6 +309,14 @@ summary{cursor:pointer;font-weight:800}
 </div>
 
 <div id="toast" class="toast"></div>
+
+<div id="codeSentOverlay" class="codeSentOverlay" role="dialog" aria-modal="true" aria-labelledby="codeSentTitle">
+  <div class="codeSentCard">
+    <h2 id="codeSentTitle">✓ Code sent</h2>
+    <p id="codeSentText">Check your email for your 6-digit code.</p>
+    <button class="btn btn-green" onclick="closeCodeSentPopup()">OK</button>
+  </div>
+</div>
 
 <script>
 let state = { items: [], logs: [], mode:'in', filter:'all' };
@@ -674,6 +687,7 @@ async function sendSignInCode(){
     }
     if(status) status.textContent = 'Enter the 6-digit code we just sent to ' + email + '. Or tap the link in the same email instead.';
     showToast('6-digit code sent — check your email');
+    showCodeSentPopup(email);
     const codeEl = document.getElementById('otpCode'); if(codeEl) codeEl.focus();
   }catch(e){
     if(status) status.textContent = 'Couldn’t send the code — check your connection and try again.';
@@ -793,6 +807,17 @@ function showToast(msg){
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
   if(navigator.vibrate) navigator.vibrate(30);
   clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2600);
+}
+/* "Code sent" popup — shown only after a code was actually sent, so the
+   user gets clear visual feedback on top of the toast/status line. */
+function showCodeSentPopup(email){
+  var o=document.getElementById('codeSentOverlay'); if(!o) return;
+  var t=document.getElementById('codeSentText'); if(t) t.textContent='Check ' + email + ' for your 6-digit code.';
+  o.classList.add('show');
+}
+function closeCodeSentPopup(){
+  var o=document.getElementById('codeSentOverlay'); if(o) o.classList.remove('show');
+  var codeEl=document.getElementById('otpCode'); if(codeEl) codeEl.focus();
 }
 function toggleEl(id){ var el=document.getElementById(id); if(!el) return; el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none'; }
 function toggleManualBarcode(){ toggleEl('manualBarcodeBox'); }
