@@ -318,6 +318,17 @@ summary{cursor:pointer;font-weight:800}
   </div>
 </div>
 
+<div id="signInFirstOverlay" class="codeSentOverlay" role="dialog" aria-modal="true" aria-labelledby="signInFirstTitle">
+  <div class="codeSentCard">
+    <h2 id="signInFirstTitle">Sign in first</h2>
+    <p>You need to sign in before scanning — scans save to the shared list.</p>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-green" style="flex:1" onclick="goToSignIn()">Sign in</button>
+      <button class="btn btn-outline" style="flex:1" onclick="closeSignInFirstPopup()">Not now</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let state = { items: [], logs: [], mode:'in', filter:'all' };
 // Last scanned/added item — the only product shown on the page (the full list
@@ -539,6 +550,8 @@ function autoRefreshSafeToRun(){
   if(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return false;
   var popup = document.getElementById('codeSentOverlay');
   if(popup && popup.classList.contains('show')) return false;
+  var signPopup = document.getElementById('signInFirstOverlay');
+  if(signPopup && signPopup.classList.contains('show')) return false;
   var check = document.getElementById('checkCard');
   if(check && check.style.display !== 'none') return false;
   return true;
@@ -1010,6 +1023,22 @@ function closeCodeSentPopup(){
   var o=document.getElementById('codeSentOverlay'); if(o) o.classList.remove('show');
   var codeEl=document.getElementById('otpCode'); if(codeEl) codeEl.focus();
 }
+/* "Sign in first" popup — shown when anyone tries to scan while signed out,
+   so a scan that would silently do nothing is never mistaken for a working
+   one. The camera never starts and the barcode is never processed. */
+function showSignInFirstPopup(){
+  var o=document.getElementById('signInFirstOverlay'); if(!o) return;
+  o.classList.add('show');
+}
+function closeSignInFirstPopup(){
+  var o=document.getElementById('signInFirstOverlay'); if(o) o.classList.remove('show');
+}
+function goToSignIn(){
+  closeSignInFirstPopup();
+  var body=document.getElementById('signinBody'); if(body) body.style.display='block';
+  if(body) body.scrollIntoView();
+  var email=document.getElementById('sbEmail'); if(email) email.focus();
+}
 function toggleEl(id){ var el=document.getElementById(id); if(!el) return; el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none'; }
 function toggleManualBarcode(){ toggleEl('manualBarcodeBox'); }
 function toggleManualForm(){ toggleEl('manualFormWrap'); }
@@ -1267,6 +1296,10 @@ function playScanBeep(){
   }catch(e){}
 }
 async function handleBarcode(barcode, source){
+  // Signed out: never process a scan — show the popup instead. This one
+  // guard covers every barcode path, because camera, typed, hardware and
+  // "Scan again" scans all funnel through here.
+  if(!sbUser){ showSignInFirstPopup(); return; }
   barcode=String(barcode).trim(); if(!barcode) return;
   const existing=state.items.find(i=>i.barcode===barcode);
   // Check mode: never change quantity, never write a ±1 row, never look
@@ -1415,6 +1448,8 @@ function pickCameraDevice(devices){
   return cameraFacing === 'user' ? devices[0].deviceId : devices[devices.length-1].deviceId;
 }
 async function startScanner(){
+  // Signed out: never start the camera — show the popup instead.
+  if(!sbUser){ showSignInFirstPopup(); return false; }
   if(scanning || scannerStarting) return false;
   unlockAudio();
   scannerStarting=true;
