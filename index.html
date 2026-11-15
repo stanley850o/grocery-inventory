@@ -135,6 +135,7 @@ summary{cursor:pointer;font-weight:800}
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button id="startBtn" class="btn btn-green" style="flex:1" onclick="startScanner()">Start camera scan</button>
           <button id="stopBtn" class="btn btn-outline" style="display:none" onclick="stopScanner()">Stop</button>
+          <button id="camToggleBtn" class="btn btn-outline" style="display:none" onclick="toggleCamera()">Use front camera</button>
         </div>
         <button class="btn btn-outline btn-sm" style="margin-top:10px;width:100%" onclick="toggleManualBarcode()">Type barcode instead</button>
       </div>
@@ -518,8 +519,61 @@ async function sbLoadLogs(){
     }
   }catch(e){}
 }
+/* ===== AUTO-REFRESH: keep the shown data fresh without reloading the page
+   (a reload would kill the camera mid-scan). Every 30s, and when the page
+   becomes visible again or the device comes back online, the shared list is
+   re-fetched silently. A tick is skipped while scanning, typing, saving, or
+   a popup is open, so a refresh never interrupts anything. */
+// Counts Supabase saves in flight (upsert/delete/log); a refresh tick waits
+// for them so a fresh fetch can never overwrite a just-made local edit.
+let sbSaveCount = 0;
+let autoRefreshBusy = false;
+let lastSyncAt = null;
+function autoRefreshSafeToRun(){
+  if(!sbUser || !sbConfig) return false;
+  if(document.hidden) return false;
+  if(!navigator.onLine) return false;
+  if(scanning || scannerStarting) return false;
+  if(sbSaveCount > 0 || autoRefreshBusy) return false;
+  var ae = document.activeElement;
+  if(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return false;
+  var popup = document.getElementById('codeSentOverlay');
+  if(popup && popup.classList.contains('show')) return false;
+  var check = document.getElementById('checkCard');
+  if(check && check.style.display !== 'none') return false;
+  return true;
+}
+function updateLastSyncUI(){
+  if(!sbUser || !sbUser.email) return;
+  var pillText = document.getElementById('connPillText'); if(!pillText) return;
+  var when = lastSyncAt ? lastSyncAt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+  pillText.textContent = 'Live — signed in as ' + sbUser.email + ' · synced ' + when;
+}
+async function autoRefreshTick(){
+  if(!autoRefreshSafeToRun()) return;
+  autoRefreshBusy = true;
+  var scrollY = window.scrollY || 0;
+  try{
+    await sbLoadItems();
+    var activity = document.getElementById('activityWrap');
+    if(activity && activity.style.display !== 'none') await sbLoadLogs();
+    lastSyncAt = new Date();
+    updateLastSyncUI();
+  }catch(e){
+    // Silent: a failed tick changes nothing on screen; the next tick retries.
+  }finally{
+    autoRefreshBusy = false;
+    if((window.scrollY || 0) !== scrollY) window.scrollTo(0, scrollY);
+  }
+}
+function startAutoRefresh(){
+  setInterval(function(){ autoRefreshTick(); }, 30000);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) autoRefreshTick(); });
+  window.addEventListener('online', function(){ autoRefreshTick(); });
+}
 async function sbUpsertItem(item){
   if(!sbUser) return;
+  sbSaveCount++;
   try{
     await sbRefreshAccessToken();
     const res = await fetch(sbConfig.url + '/rest/v1/inventory_items?on_conflict=barcode', {
@@ -530,17 +584,19 @@ async function sbUpsertItem(item){
     if(!res.ok) throw new Error('upsert ' + res.status);
     const rows = await res.json();
     if(rows && rows[0] && rows[0].id) item.id = rows[0].id;
-  }catch(e){ showToast('Saved here, but Supabase sync failed — check your connection'); }
+  }catch(e){ showToast('Saved here, but Supabase sync failed — check your connection'); }finally{ sbSaveCount--; }
 }
 async function sbDeleteItem(item){
   if(!sbUser) return;
+  sbSaveCount++;
   try{
     await sbRefreshAccessToken();
     await fetch(sbConfig.url + '/rest/v1/inventory_items?barcode=eq.' + encodeURIComponent(item.barcode), { method: 'DELETE', headers: sbHeaders() });
-  }catch(e){}
+  }catch(e){}finally{ sbSaveCount--; }
 }
 async function sbWriteLog(item, delta){
   if(!sbUser) return;
+  sbSaveCount++;
   try{
     await sbRefreshAccessToken();
     await fetch(sbConfig.url + '/rest/v1/inventory_log', {
@@ -548,7 +604,7 @@ async function sbWriteLog(item, delta){
       headers: sbHeaders({ Prefer: 'return=minimal' }),
       body: JSON.stringify({ barcode: item.barcode, item_name: item.name, delta: delta, mode: state.mode, user_id: sbUser.id })
     });
-  }catch(e){}
+  }catch(e){}finally{ sbSaveCount--; }
 }
 function setConnUI(mode, email){
   const pillText = document.getElementById('connPillText');
@@ -924,6 +980,19 @@ let codeReader = null;
 let scanning = false;
 let scannerStarting = false;
 let scanCooldownUntil = 0;
+// Front/rear camera choice. Saved per device so the iPad stays on the
+// front (FaceTime) camera across reloads; default is the rear camera.
+const CAM_FACING_KEY = 'household-inventory-camera-facing-v1';
+let cameraFacing = 'environment';
+try{ const savedFacing = localStorage.getItem(CAM_FACING_KEY); if(savedFacing === 'user' || savedFacing === 'environment') cameraFacing = savedFacing; }catch(e){}
+function saveCameraFacing(){
+  try{ localStorage.setItem(CAM_FACING_KEY, cameraFacing); }catch(e){}
+}
+function updateCamToggleLabel(){
+  var b=document.getElementById('camToggleBtn'); if(!b) return;
+  // Label names the OTHER camera, the one a tap switches to.
+  b.textContent = cameraFacing === 'user' ? 'Use rear camera' : 'Use front camera';
+}
 
 function showToast(msg){
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
@@ -1153,6 +1222,50 @@ function checkAdjust(delta){
   showCheckCard(it);
 }
 
+// Checkout-style scan beep, generated with the Web Audio API (no file, no
+// network) so it works offline. iOS Safari keeps an AudioContext silent
+// until a user gesture creates/resumes it, so unlockAudio() runs on every
+// tap (and on Start camera scan) and the beep itself is fire-and-forget:
+// it never delays scan handling, and it only sounds for a scan that
+// actually found an item.
+var scanAudioCtx = null;
+var lastBeepAt = 0;
+function unlockAudio(){
+  try{
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    if(!scanAudioCtx) scanAudioCtx = new AC();
+    if(scanAudioCtx.state === 'suspended') scanAudioCtx.resume();
+  }catch(e){}
+}
+function playScanBeep(){
+  var now = Date.now();
+  // Never double-beep for one scan event arriving twice in quick succession.
+  if(now - lastBeepAt < 150) return;
+  lastBeepAt = now;
+  try{
+    var ctx = scanAudioCtx;
+    if(!ctx){
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return;
+      ctx = scanAudioCtx = new AC();
+    }
+    // No gesture has unlocked audio yet: resume for next time, stay silent now.
+    if(ctx.state === 'suspended'){ ctx.resume(); return; }
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 950;
+    var t = ctx.currentTime;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.25, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.12);
+  }catch(e){}
+}
 async function handleBarcode(barcode, source){
   barcode=String(barcode).trim(); if(!barcode) return;
   const existing=state.items.find(i=>i.barcode===barcode);
@@ -1162,13 +1275,14 @@ async function handleBarcode(barcode, source){
   // mode 'check' — so checking is visible without ever looking like stock
   // was added or removed.
   if(state.mode==='check'){
-    if(existing){ showCheckCard(existing); log(existing.name + ' checked', 0, '✓'); sbWriteLog(existing, 0); showToast(`${existing.name} — ${existing.qty} on hand · ${existing.location||'Pantry'}`); }
+    if(existing){ showCheckCard(existing); log(existing.name + ' checked', 0, '✓'); sbWriteLog(existing, 0); showToast(`${existing.name} — ${existing.qty} on hand · ${existing.location||'Pantry'}`); playScanBeep(); }
     else{ showCheckCard(null, barcode); log('Checked ' + barcode + ' — not in your list', 0, '✓'); showToast('Not in your list yet — 0 on hand'); }
     return;
   }
   if(existing){
     applyDelta(existing, state.mode==='in'?1:-1);
     showToast(`${existing.name} — now ${existing.qty}`);
+    playScanBeep();
     return;
   }
   // Scan-out of something not in the list: never add a qty-0 item.
@@ -1183,7 +1297,7 @@ async function handleBarcode(barcode, source){
     state.items.unshift(item);
     setLastItem(item.id);
     log(`${item.name} added`, 1);
-    render(); showToast(`${item.name} added · qty 1`);
+    render(); showToast(`${item.name} added · qty 1`); playScanBeep();
     await sbUpsertItem(item); sbWriteLog(item, 1); render();
   }else{
     // Found nowhere: auto-open the Add manually form (it is collapsed by default),
@@ -1269,11 +1383,11 @@ async function applyContinuousFocus(stream){
 }
 async function openCameraStream(){
   // Ask for continuous focus up front; if the browser rejects those
-  // constraints, fall back to a plain rear-camera stream instead of failing.
+  // constraints, fall back to a plain stream instead of failing.
   try{
-    return await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment', focusMode:'continuous', exposureMode:'continuous', whiteBalanceMode:'continuous'}});
+    return await navigator.mediaDevices.getUserMedia({video:{facingMode:cameraFacing, focusMode:'continuous', exposureMode:'continuous', whiteBalanceMode:'continuous'}});
   }catch(e){
-    return await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    return await navigator.mediaDevices.getUserMedia({video:{facingMode:cameraFacing}});
   }
 }
 function onCameraCode(code){
@@ -1287,10 +1401,25 @@ function releaseCamera(){
   if(video.srcObject){ video.srcObject.getTracks().forEach(t=>{ try{t.stop()}catch(e){} }); video.srcObject=null; }
   if(codeReader){ try{codeReader.reset()}catch(e){} codeReader=null; }
 }
+function pickCameraDevice(devices){
+  // ZXing's device-list fallback: prefer a device whose label names the
+  // camera we asked for; otherwise keep the old rear pick (last device)
+  // and the first device for the front camera.
+  if(!devices || !devices.length) return undefined;
+  var i, label;
+  for(i=0;i<devices.length;i++){
+    label = (devices[i].label || '').toLowerCase();
+    if(cameraFacing === 'user' && (label.indexOf('front') !== -1 || label.indexOf('facetime') !== -1)) return devices[i].deviceId;
+    if(cameraFacing === 'environment' && (label.indexOf('back') !== -1 || label.indexOf('rear') !== -1)) return devices[i].deviceId;
+  }
+  return cameraFacing === 'user' ? devices[0].deviceId : devices[devices.length-1].deviceId;
+}
 async function startScanner(){
-  if(scanning || scannerStarting) return;
+  if(scanning || scannerStarting) return false;
+  unlockAudio();
   scannerStarting=true;
   const video=document.getElementById('video');
+  let scanStarted=false;
   try{
     // Restart hygiene: fully release any stale stream before acquiring a new
     // one, so a stale track can never be reused.
@@ -1298,6 +1427,7 @@ async function startScanner(){
     await new Promise(r=>setTimeout(r,150));
     document.getElementById('camPlaceholder').style.display='none'; video.style.display='block'; document.getElementById('scanLine').style.display='block';
     document.getElementById('startBtn').style.display='none'; document.getElementById('stopBtn').style.display='inline-flex';
+    updateCamToggleLabel(); document.getElementById('camToggleBtn').style.display='inline-flex';
     scanning=true; scanCooldownUntil=0;
     // Prefer native BarcodeDetector if available
     if('BarcodeDetector' in window){
@@ -1310,13 +1440,13 @@ async function startScanner(){
           if(!scanning) return;
           try{ const codes=await detector.detect(video); if(codes && codes.length){ onCameraCode(codes[0].rawValue); } }catch(e){}
           if(scanning) requestAnimationFrame(loop);
-        }; loop(); return;
+        }; loop(); scanStarted=true; return true;
       }catch(e){ releaseCamera(); /* fall through to ZXing */ }
     }
     if(window.ZXing){
       try{
         codeReader=new ZXing.BrowserMultiFormatReader();
-        const focusConstraints={video:{facingMode:'environment', focusMode:'continuous', exposureMode:'continuous', whiteBalanceMode:'continuous'}};
+        const focusConstraints={video:{facingMode:cameraFacing, focusMode:'continuous', exposureMode:'continuous', whiteBalanceMode:'continuous'}};
         let started=false;
         if(codeReader.decodeFromConstraints){
           try{
@@ -1326,17 +1456,19 @@ async function startScanner(){
         }
         if(!started){
           const devices=await codeReader.listVideoInputDevices();
-          const deviceId=devices && devices.length ? devices[devices.length-1].deviceId : undefined;
+          const deviceId=pickCameraDevice(devices);
           await codeReader.decodeFromVideoDevice(deviceId,'video',(result,err)=>{
             if(result){ onCameraCode(result.getText()); }
           });
         }
         // ZXing owns the stream here; apply continuous focus to its track too.
         if(video.srcObject) await applyContinuousFocus(video.srcObject);
+        scanStarted=true;
       }catch(e){ showToast('Camera not available — use manual barcode entry'); stopScanner(); }
     }else{
       showToast('Scanner library didn’t load — use manual entry'); stopScanner();
     }
+    return scanStarted;
   }finally{ scannerStarting=false; }
 }
 function stopScanner(){
@@ -1347,6 +1479,28 @@ function stopScanner(){
   const video=document.getElementById('video');
   video.style.display='none'; document.getElementById('camPlaceholder').style.display='block'; document.getElementById('scanLine').style.display='none';
   document.getElementById('startBtn').style.display='inline-flex'; document.getElementById('stopBtn').style.display='none';
+  document.getElementById('camToggleBtn').style.display='none';
+}
+async function toggleCamera(){
+  if(!scanning || scannerStarting) return;
+  // A device with a single camera has nothing to switch to.
+  try{
+    var devices = await navigator.mediaDevices.enumerateDevices();
+    var count = 0;
+    for(var i=0;i<devices.length;i++){ if(devices[i].kind === 'videoinput') count++; }
+    if(count <= 1){ showToast('Only one camera on this device'); return; }
+  }catch(e){}
+  var previousFacing = cameraFacing;
+  cameraFacing = cameraFacing === 'user' ? 'environment' : 'user';
+  saveCameraFacing(); updateCamToggleLabel();
+  // Stop the current stream cleanly, then restart on the other camera.
+  scanning = false;
+  releaseCamera();
+  var ok = await startScanner();
+  if(ok) return;
+  // The other camera would not open: go back to the one that was working.
+  cameraFacing = previousFacing; saveCameraFacing(); updateCamToggleLabel();
+  await startScanner();
 }
 
 function renderStats(){
@@ -1499,6 +1653,11 @@ initSbAuthFromReturn();
   }
 })();
 render(); renderLog();
+startAutoRefresh();
+// Unlock audio on any tap so the scan beep can sound on iOS, which keeps an
+// AudioContext silent until a user gesture creates/resumes it.
+document.addEventListener('touchstart', unlockAudio);
+document.addEventListener('mousedown', unlockAudio);
 </script>
 </body>
 </html>
