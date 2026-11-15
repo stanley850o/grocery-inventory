@@ -1384,17 +1384,10 @@ async function applyContinuousFocus(stream){
 async function openCameraStream(){
   // Ask for continuous focus up front; if the browser rejects those
   // constraints, fall back to a plain stream instead of failing.
-  // The front camera is fixed-focus and low resolution, so when it is
-  // selected ask for a larger frame (ideal only, never required) to give
-  // decoding more pixels. The rear camera keeps its current constraints.
-  var videoConstraints={facingMode:cameraFacing, focusMode:'continuous', exposureMode:'continuous', whiteBalanceMode:'continuous'};
-  if(cameraFacing === 'user'){ videoConstraints.width={ideal:1280}; videoConstraints.height={ideal:720}; }
   try{
-    return await navigator.mediaDevices.getUserMedia({video:videoConstraints});
+    return await navigator.mediaDevices.getUserMedia({video:{facingMode:cameraFacing, focusMode:'continuous', exposureMode:'continuous', whiteBalanceMode:'continuous'}});
   }catch(e){
-    var plainConstraints={facingMode:cameraFacing};
-    if(cameraFacing === 'user'){ plainConstraints.width={ideal:1280}; plainConstraints.height={ideal:720}; }
-    return await navigator.mediaDevices.getUserMedia({video:plainConstraints});
+    return await navigator.mediaDevices.getUserMedia({video:{facingMode:cameraFacing}});
   }
 }
 function onCameraCode(code){
@@ -1452,21 +1445,8 @@ async function startScanner(){
     }
     if(window.ZXing){
       try{
-        // Front camera: fixed focus, low resolution. Give the reader more
-        // pixels (ideal 1280x720, see focusConstraints below) and TRY_HARDER
-        // hints so faint barcodes still decode. The rear camera keeps its
-        // current reader and constraints. (ZXing 0.21.3: the reader takes a
-        // hints Map; TRY_HARDER lives on ZXing.DecodeHintType.)
-        var frontHints=null;
-        if(cameraFacing === 'user' && ZXing.DecodeHintType){
-          try{
-            frontHints=new Map();
-            frontHints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-          }catch(e){ frontHints=null; }
-        }
-        codeReader=frontHints ? new ZXing.BrowserMultiFormatReader(frontHints) : new ZXing.BrowserMultiFormatReader();
+        codeReader=new ZXing.BrowserMultiFormatReader();
         const focusConstraints={video:{facingMode:cameraFacing, focusMode:'continuous', exposureMode:'continuous', whiteBalanceMode:'continuous'}};
-        if(cameraFacing === 'user'){ focusConstraints.video.width={ideal:1280}; focusConstraints.video.height={ideal:720}; }
         let started=false;
         if(codeReader.decodeFromConstraints){
           try{
