@@ -9,7 +9,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 :root{
   --bg:#f4f6f0; --surface:#ffffff; --surface2:#eef2e8; --line:#dde3d6;
@@ -330,7 +329,9 @@ function setLastItem(id){
   lastItemId=id||null;
   try{ if(id) localStorage.setItem(LAST_ITEM_KEY,id); else localStorage.removeItem(LAST_ITEM_KEY); }catch(e){}
 }
-let sb = null;          // Supabase client (auth), created on Connect
+// No Supabase JS client anymore: sign-in uses direct GoTrue REST calls
+// (fetch), so the app also works on old browsers that cannot parse the
+// supabase-js bundle. Sessions are stored by sbSaveSession() below.
 let sbUser = null;      // signed-in user; null = preview mode
 let sbConfig = null;    // { url, key } in use for this session
 let sbAccessToken = null; // signed-in session access_token — used as Bearer for all REST calls so RLS (authenticated only) passes
@@ -462,15 +463,17 @@ function loadSavedSbConfig(){
 
 /* ===== Supabase live sync ===== */
 async function sbRefreshAccessToken(){
-  if(sb){
-    try{
-      const r = await sb.auth.getSession();
-      if(r && r.data && r.data.session && r.data.session.access_token){
-        sbAccessToken = r.data.session.access_token;
-        if(r.data.session.user) sbUser = r.data.session.user;
-      }
-    }catch(e){}
-  }
+  if(!sbAccessToken) return sbAccessToken;
+  var sess = null;
+  try{ sess = sbReadSession(); }catch(e){}
+  if(!sess || !sess.refresh_token) return sbAccessToken;
+  var now = Math.floor(Date.now()/1000);
+  if(!sess.expires_at) return sbAccessToken;
+  if(now < sess.expires_at - 60) return sbAccessToken;
+  try{
+    var r = await sbAuthPost('/token?grant_type=refresh_token', { refresh_token: sess.refresh_token });
+    if(r.ok && r.data && r.data.access_token){ sbSaveSession(r.data); }
+  }catch(e){}
   return sbAccessToken;
 }
 function sbHeaders(extra){
@@ -588,7 +591,7 @@ async function completeSignIn(session){
     sbAccessToken = session.access_token;
     sbUser = session.user || sbUser;
     if(!sbUser || !sbUser.email){
-      try{ const r = await sb.auth.getUser(); if(r && r.data && r.data.user) sbUser = r.data.user; }catch(e){}
+      try{ const u = await sbFetchUser(); if(u) sbUser = u; }catch(e){}
     }
     const probe = await fetch(sbConfig.url + '/rest/v1/inventory_items?select=id&limit=1', { headers: sbHeaders() });
     if(!probe.ok){ const t = await probe.text(); if(status) status.textContent = 'Signed in, but reached Supabase with ' + probe.status + '. ' + t.slice(0, 140) + ' — check the shared tables are set up in Supabase.'; return false; }
@@ -632,31 +635,115 @@ async function handleRememberDeviceChange(){
   var el = document.getElementById('sbRememberDevice');
   if(!el) return;
   setRememberDevice(el.checked);
-  if(!el.checked && sbUser){
-    // Unticking while signed in ends the remembered session now.
+  if(sbUser){
+    // Toggling the choice while signed in ends the session now, so the
+    // next sign-in uses the newly chosen storage (local or session).
     await signOutSupabase();
-  } else if(sb){
-    // No session to end: drop the client so the next sign-in is
-    // created with the newly chosen storage (local or session).
-    try{ await sb.auth.signOut(); }catch(e){}
-    sb = null;
   }
+  // Not signed in: nothing to end. The storage used for the session is
+  // chosen at save time from this same checkbox, so the next sign-in
+  // automatically uses the newly chosen storage.
 }
-function ensureSbClient(cfg){
-  if(sb) { sbConfig = cfg; return sb; }
-  if(!(window.supabase && window.supabase.createClient)) return null;
-  sbConfig = cfg;
-  var remember = rememberDeviceEnabled();
-  var storage = null;
-  try{ storage = remember ? window.localStorage : window.sessionStorage; }catch(e){ storage = null; }
-  var authOpts = { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true };
-  if(storage) authOpts.storage = storage;
-  // detectSessionInUrl is what lets a magic-link return (Supabase
-  // redirects back here with the session in the URL) sign the user
-  // in automatically via getSession / onAuthStateChange below.
-  sb = window.supabase.createClient(cfg.url, cfg.key, { auth: authOpts });
-  try{ sb.auth.onAuthStateChange(function(event, session){ if(session && session.access_token){ sbAccessToken = session.access_token; if(session.user) sbUser = session.user; if(event === 'SIGNED_IN' && !sbCompleting){ completeSignIn(session); } } }); }catch(e){}
-  return sb;
+/* ===== Sign-in without the Supabase JS library =====
+   The supabase-js bundle uses ES2020 syntax (optional chaining,
+   nullish coalescing) that old browsers (e.g. iOS 12 Safari) cannot
+   parse, so the whole library failed to load there and sign-in was
+   impossible. Sign-in now talks to GoTrue directly with fetch, the
+   same way the app already talks to PostgREST for all its data.
+   The session is stored by us, in the storage the "Remember this
+   device" checkbox chooses (localStorage = remembered, sessionStorage
+   = this tab only). */
+const SB_SESSION_KEY = 'household-inventory-sb-session-v1';
+function sbSessionStore(){
+  try{ return rememberDeviceEnabled() ? window.localStorage : window.sessionStorage; }catch(e){ return null; }
+}
+function sbSaveSession(session){
+  if(!session || !session.access_token) return;
+  sbAccessToken = session.access_token;
+  if(session.user) sbUser = session.user;
+  var store = sbSessionStore();
+  if(!store) return;
+  var expiresAt = session.expires_at || 0;
+  if(!expiresAt && session.expires_in){ expiresAt = Math.floor(Date.now()/1000) + session.expires_in; }
+  try{
+    store.setItem(SB_SESSION_KEY, JSON.stringify({ access_token: session.access_token, refresh_token: session.refresh_token || '', expires_at: expiresAt, user: session.user || null }));
+  }catch(e){}
+}
+function sbReadSession(){
+  var raw = null;
+  try{ var store = sbSessionStore(); if(store) raw = store.getItem(SB_SESSION_KEY); }catch(e){}
+  if(!raw) raw = sbReadLegacySession();
+  if(!raw) return null;
+  try{ var s = JSON.parse(raw); if(s && s.access_token) return s; }catch(e){}
+  return null;
+}
+function sbReadLegacySession(){
+  // The Supabase JS client stored the session as JSON under
+  // sb-<project-ref>-auth-token in localStorage or sessionStorage.
+  // Pick one up so a signed-in user is not signed out by this
+  // update, then drop the old key (the session is re-saved under
+  // the new key by the caller via sbSaveSession).
+  var ref = '';
+  try{ if(sbConfig && sbConfig.url){ ref = sbConfig.url.split('://').pop().split('.')[0]; } }catch(e){}
+  if(!ref) return null;
+  var key = 'sb-' + ref + '-auth-token';
+  var storages = [];
+  try{ if(window.localStorage) storages.push(window.localStorage); }catch(e){}
+  try{ if(window.sessionStorage) storages.push(window.sessionStorage); }catch(e){}
+  for(var i = 0; i < storages.length; i++){
+    try{
+      var v = storages[i].getItem(key);
+      if(v){
+        try{ storages[i].removeItem(key); }catch(e2){}
+        return v;
+      }
+    }catch(e3){}
+  }
+  return null;
+}
+function sbClearSession(){
+  try{ var store = sbSessionStore(); if(store) store.removeItem(SB_SESSION_KEY); }catch(e){}
+  try{ if(window.localStorage) window.localStorage.removeItem(SB_SESSION_KEY); }catch(e){}
+  try{ if(window.sessionStorage) window.sessionStorage.removeItem(SB_SESSION_KEY); }catch(e){}
+  // Also drop a session the old Supabase JS client may have stored,
+  // so signing out cannot be undone by the legacy-key fallback.
+  try{
+    var ref = '';
+    if(sbConfig && sbConfig.url){ ref = sbConfig.url.split('://').pop().split('.')[0]; }
+    if(ref){
+      var key = 'sb-' + ref + '-auth-token';
+      try{ if(window.localStorage) window.localStorage.removeItem(key); }catch(e){}
+      try{ if(window.sessionStorage) window.sessionStorage.removeItem(key); }catch(e){}
+    }
+  }catch(e){}
+}
+function sbAuthHeaders(){
+  return { apikey: sbConfig.key, 'Content-Type': 'application/json' };
+}
+function sbAuthErrorMessage(data, fallback){
+  if(data){
+    if(data.msg) return data.msg;
+    if(data.message) return data.message;
+    if(data.error_description) return data.error_description;
+    if(typeof data.error === 'string' && data.error) return data.error;
+  }
+  return fallback;
+}
+async function sbAuthPost(path, body, bearer){
+  var headers = sbAuthHeaders();
+  if(bearer) headers.Authorization = 'Bearer ' + bearer;
+  var res = await fetch(sbConfig.url + '/auth/v1' + path, { method: 'POST', headers: headers, body: JSON.stringify(body) });
+  var data = null;
+  try{ data = await res.json(); }catch(e){}
+  return { ok: res.ok, status: res.status, data: data };
+}
+async function sbFetchUser(){
+  try{
+    var res = await fetch(sbConfig.url + '/auth/v1/user', { headers: { apikey: sbConfig.key, Authorization: 'Bearer ' + sbAccessToken } });
+    if(!res.ok) return null;
+    var data = await res.json();
+    return data || null;
+  }catch(e){ return null; }
 }
 /* ===== Email-code sign-in (Supabase OTP) =====
    Only the two household emails below may receive a code.
@@ -674,14 +761,13 @@ async function sendSignInCode(){
   }
   const cfg = getEffectiveSbConfig();
   if(!cfg){ if(status) status.textContent = 'This copy isn’t set up yet — the owner needs to add the household connection first.'; return; }
-  if(!(window.supabase && window.supabase.createClient)){ if(status) status.textContent = 'The sign-in library didn’t load — check your connection and reload the page.'; return; }
-  if(!ensureSbClient(cfg)){ if(status) status.textContent = 'Could not start sign-in — reload the page and try again.'; return; }
+  sbConfig = cfg;
   const btn = document.getElementById('otpSendBtn'); if(btn) btn.disabled = true;
   if(status) status.textContent = 'Sending a 6-digit code to ' + email + '…';
   try{
-    const result = await sb.auth.signInWithOtp({ email: email, options: { shouldCreateUser: true, emailRedirectTo: 'https://stanley850o.github.io/grocery-inventory/' } });
-    if(result && result.error){
-      if(status) status.textContent = 'Couldn’t send the code: ' + result.error.message;
+    const r = await sbAuthPost('/otp', { email: email, create_user: true, redirect_to: 'https://stanley850o.github.io/grocery-inventory/' });
+    if(!r.ok){
+      if(status) status.textContent = 'Couldn’t send the code: ' + sbAuthErrorMessage(r.data, 'HTTP ' + r.status);
       if(btn) btn.disabled = false;
       return;
     }
@@ -708,24 +794,23 @@ async function verifySignInCode(){
   if(!/^\d{6}$/.test(code)){ if(status) status.textContent = 'Enter the 6-digit code from the email.'; return; }
   let cfg = getEffectiveSbConfig();
   if(!cfg){ if(status) status.textContent = 'This copy isn’t set up yet — the owner needs to add the household connection first.'; return; }
-  if(!(window.supabase && window.supabase.createClient)){ if(status) status.textContent = 'The sign-in library didn’t load — check your connection and reload the page.'; return; }
-  if(!ensureSbClient(cfg)){ if(status) status.textContent = 'Could not start sign-in — reload the page and try again.'; return; }
+  sbConfig = cfg;
   const btn = document.getElementById('otpVerifyBtn'); if(btn) btn.disabled = true;
   if(status) status.textContent = 'Verifying your code…';
   try{
-    const result = await sb.auth.verifyOtp({ email: email, token: code, type: 'email' });
-    if(result && result.error){
-      if(status) status.textContent = 'That code didn’t work: ' + result.error.message + ' — check the code or send a new one.';
+    const r = await sbAuthPost('/verify', { email: email, token: code, type: 'email' });
+    if(!r.ok){
+      if(status) status.textContent = 'That code didn’t work: ' + sbAuthErrorMessage(r.data, 'HTTP ' + r.status) + ' — check the code or send a new one.';
       if(btn) btn.disabled = false;
       return;
     }
-    if(!result.data || !result.data.session || !result.data.session.access_token){
+    if(!r.data || !r.data.access_token){
       if(status) status.textContent = 'Verification did not return a session — send a new code and try again.';
       if(btn) btn.disabled = false;
       return;
     }
-    if(result.data.user) sbUser = result.data.user;
-    await completeSignIn(result.data.session);
+    sbSaveSession(r.data);
+    await completeSignIn(r.data);
   }catch(e){
     if(status) status.textContent = 'Couldn’t verify the code — check your connection and try again.';
   }finally{
@@ -735,11 +820,45 @@ async function verifySignInCode(){
 async function initSbAuthFromReturn(){
   const cfg = getEffectiveSbConfig();
   if(!cfg) return;
-  if(!ensureSbClient(cfg)) return;
-  try{
-    const r = await sb.auth.getSession();
-    if(r && r.data && r.data.session && r.data.session.access_token){ await completeSignIn(r.data.session); }
-  }catch(e){}
+  sbConfig = cfg;
+  // Magic-link return: Supabase redirects back here with the session in
+  // the URL hash (#access_token=…&refresh_token=…&type=…). Pick it up
+  // manually (the old detectSessionInUrl did this inside the library),
+  // then scrub the hash so a reload does not sign in twice.
+  var hashSession = sbSessionFromHash();
+  if(hashSession){
+    try{ if(window.history && window.history.replaceState){ window.history.replaceState(null, '', window.location.pathname + window.location.search); } }catch(e){}
+    sbSaveSession(hashSession);
+    await completeSignIn(hashSession);
+    return;
+  }
+  var sess = null;
+  try{ sess = sbReadSession(); }catch(e){}
+  if(sess && sess.access_token){ sbSaveSession(sess); await completeSignIn(sess); }
+}
+function sbSessionFromHash(){
+  var hash = '';
+  try{ hash = window.location.hash || ''; }catch(e){ return null; }
+  if(!hash || hash.indexOf('access_token=') === -1) return null;
+  var parts = hash.substring(1).split('&');
+  var out = { access_token: '', refresh_token: '', expires_at: 0, user: null };
+  var err = '';
+  for(var i = 0; i < parts.length; i++){
+    var kv = parts[i].split('=');
+    var k = kv[0];
+    var v = '';
+    try{ v = decodeURIComponent(kv[1] || ''); }catch(e){ v = kv[1] || ''; }
+    if(k === 'access_token') out.access_token = v;
+    else if(k === 'refresh_token') out.refresh_token = v;
+    else if(k === 'expires_at'){ var n = parseInt(v, 10); if(!isNaN(n)) out.expires_at = n; }
+    else if(k === 'expires_in'){ var n2 = parseInt(v, 10); if(!isNaN(n2) && !out.expires_at) out.expires_at = Math.floor(Date.now()/1000) + n2; }
+    else if(k === 'error_description' || k === 'error') err = v;
+  }
+  if(!out.access_token){
+    if(err){ var st = document.getElementById('sbStatus'); if(st) st.textContent = 'Sign-in link failed: ' + err; }
+    return null;
+  }
+  return out;
 }
 
 async function connectSupabase(){
@@ -766,22 +885,25 @@ async function connectSupabase(){
   const rememberEl = document.getElementById('sbRemember');
   if(rememberEl && rememberEl.checked){ saveSbConfig(false); }
   sbAccessToken = null;
-  if(!(window.supabase && window.supabase.createClient)){ status.textContent = 'The sign-in library didn’t load — check your connection and reload the page.'; sbConfig = null; return; }
-  // Reuse the shared client so code sign-in and email sign-in share one session.
-  sb = null; ensureSbClient(cfg);
-  let auth;
-  try{ auth = await sb.auth.signInWithPassword({ email: email, password: pass }); }
-  catch(e){ status.textContent = 'Could not reach that URL — double-check the Project URL and your connection.'; sb = null; sbConfig = null; return; }
-  if(auth.error){ status.textContent = 'Sign-in failed: ' + auth.error.message + ' — check the email and password, or add your user in Supabase → Authentication → Users first.'; sb = null; sbConfig = null; return; }
-  if(!auth.data || !auth.data.session || !auth.data.session.access_token){ status.textContent = 'Sign-in did not return a session — try again, or check email confirmation in Supabase → Authentication.'; sb = null; sbConfig = null; return; }
-  if(auth.data.user) sbUser = auth.data.user;
+  sbUser = null;
+  var auth = null;
+  try{
+    var r = await sbAuthPost('/token?grant_type=password', { email: email, password: pass });
+    if(!r.ok){ status.textContent = 'Sign-in failed: ' + sbAuthErrorMessage(r.data, 'HTTP ' + r.status) + ' — check the email and password, or add your user in Supabase → Authentication → Users first.'; sbConfig = null; return; }
+    auth = r.data;
+  }catch(e){ status.textContent = 'Could not reach that URL — double-check the Project URL and your connection.'; sbConfig = null; return; }
+  if(!auth || !auth.access_token){ status.textContent = 'Sign-in did not return a session — try again, or check email confirmation in Supabase → Authentication.'; sbConfig = null; return; }
+  sbSaveSession(auth);
   // Probe + load + live UI all run through completeSignIn, with the session
   // token as Bearer so RLS (authenticated only) passes — same path code sign-in uses.
-  await completeSignIn(auth.data.session);
+  await completeSignIn(auth);
 }
 async function signOutSupabase(){
-  if(sb){ try{ await sb.auth.signOut(); }catch(e){} }
-  sb = null; sbUser = null; sbAccessToken = null; sbConfig = null; sbLastCompletedToken = null;
+  if(sbAccessToken && sbConfig){
+    try{ await fetch(sbConfig.url + '/auth/v1/logout', { method: 'POST', headers: { apikey: sbConfig.key, Authorization: 'Bearer ' + sbAccessToken } }); }catch(e){}
+  }
+  sbClearSession();
+  sbUser = null; sbAccessToken = null; sbConfig = null; sbLastCompletedToken = null;
   setConnUI('preview');
   var sr2=document.getElementById('signedInRow'); if(sr2) sr2.style.display='none';
   var tb2=document.getElementById('signinToggleBtn'); if(tb2) tb2.style.display='block';
@@ -1361,8 +1483,8 @@ document.addEventListener('keydown', e=>{
 loadSavedSbConfig();
 applySbVisibility();
 applyRememberDeviceCheckbox();
-// Pick up a session already stored by
-// Supabase) and finish signing in with its session token.
+// Pick up a session already stored on this device (or a magic-link
+// return in the URL hash) and finish signing in with its token.
 initSbAuthFromReturn();
 (function(){
   const remember = document.getElementById('sbRemember');
