@@ -474,19 +474,26 @@ function loadSavedSbConfig(){
 }
 
 /* ===== Supabase live sync ===== */
+/* Returns true when the token is usable now: no refresh was needed, or
+   the refresh succeeded. Returns false only when the stored token is
+   expired and the refresh failed (or there is no refresh token) — the
+   caller can then end in a clean signed-out state instead of probing
+   with a dead token. Callers that ignore the return (data loads) are
+   unaffected. */
 async function sbRefreshAccessToken(){
-  if(!sbAccessToken) return sbAccessToken;
+  if(!sbAccessToken) return false;
   var sess = null;
   try{ sess = sbReadSession(); }catch(e){}
-  if(!sess || !sess.refresh_token) return sbAccessToken;
+  if(!sess || !sess.access_token) return true;
+  if(!sess.expires_at) return true;
   var now = Math.floor(Date.now()/1000);
-  if(!sess.expires_at) return sbAccessToken;
-  if(now < sess.expires_at - 60) return sbAccessToken;
+  if(now < sess.expires_at - 60) return true;
+  if(!sess.refresh_token) return false;
   try{
     var r = await sbAuthPost('/token?grant_type=refresh_token', { refresh_token: sess.refresh_token });
-    if(r.ok && r.data && r.data.access_token){ sbSaveSession(r.data); }
+    if(r.ok && r.data && r.data.access_token){ sbSaveSession(r.data); return true; }
   }catch(e){}
-  return sbAccessToken;
+  return false;
 }
 function sbHeaders(extra){
   // apikey stays the publishable key; Authorization must be the signed-in
@@ -662,10 +669,28 @@ async function completeSignIn(session){
     if(!sbUser || !sbUser.email){
       try{ const u = await sbFetchUser(); if(u) sbUser = u; }catch(e){}
     }
+    // A stored session's access token expires after 1 hour. Refresh it
+    // before probing, or the probe 401s and the restore fails even though
+    // a valid refresh token is stored (the old library auto-refreshed on
+    // getSession(); our direct calls do not).
+    var refreshedOk = true;
+    try{ refreshedOk = await sbRefreshAccessToken(); }catch(e){ refreshedOk = false; }
+    if(!refreshedOk){
+      // The refresh token is dead: end in a clean signed-out state, not
+      // the half-state (sbUser set, UI on the sign-in panel).
+      sbClearSession();
+      sbUser = null; sbAccessToken = null; sbLastCompletedToken = null;
+      setConnUI('preview');
+      if(status) status.textContent = 'Your saved sign-in expired — sign in again with a 6-digit code or your password.';
+      return false;
+    }
+    if(!sbUser || !sbUser.email){
+      try{ const u = await sbFetchUser(); if(u) sbUser = u; }catch(e){}
+    }
     const probe = await fetch(sbConfig.url + '/rest/v1/inventory_items?select=id&limit=1', { headers: sbHeaders() });
     if(!probe.ok){ const t = await probe.text(); if(status) status.textContent = 'Signed in, but reached Supabase with ' + probe.status + '. ' + t.slice(0, 140) + ' — check the shared tables are set up in Supabase.'; return false; }
     try{ await sbLoadItems(); await sbLoadLogs(); }catch(e){ if(status) status.textContent = 'Signed in, but loading the shared list failed — check the shared tables are set up in Supabase.'; return false; }
-    sbLastCompletedToken = session.access_token;
+    sbLastCompletedToken = sbAccessToken; // the token in use now, which may be a refreshed one
     const emailLabel = (sbUser && sbUser.email) ? sbUser.email : 'your account';
     setConnUI('live', emailLabel);
     let savedNote = '';
