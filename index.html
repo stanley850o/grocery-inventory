@@ -540,21 +540,30 @@ async function sbLoadLogs(){
 /* ===== AUTO-REFRESH: keep the shown data fresh without reloading the page
    (a reload would kill the camera mid-scan). Every 30s, and when the page
    becomes visible again or the device comes back online, the shared list is
-   re-fetched silently. A tick is skipped while scanning, typing, saving, or
-   a popup is open, so a refresh never interrupts anything. */
+   re-fetched silently. A tick is skipped while scanning, while a list
+   quantity/location is being edited, while saving, or while a popup is
+   open, so a refresh never interrupts anything. Typing in the search box,
+   the barcode field, or the manual-entry form does NOT block a tick. */
 // Counts Supabase saves in flight (upsert/delete/log); a refresh tick waits
 // for them so a fresh fetch can never overwrite a just-made local edit.
 let sbSaveCount = 0;
 let autoRefreshBusy = false;
 let lastSyncAt = null;
+let autoRefreshFailCount = 0;
 function autoRefreshSafeToRun(){
   if(!sbUser || !sbConfig) return false;
   if(document.hidden) return false;
   if(!navigator.onLine) return false;
   if(scanning || scannerStarting) return false;
   if(sbSaveCount > 0 || autoRefreshBusy) return false;
+  // Only a focused control inside the item list blocks a tick: render()
+  // rebuilds #itemsWrap, which would destroy a quantity input or location
+  // select mid-edit. Focus anywhere else (search box, barcode field,
+  // manual-entry form) is safe — render() only reads the search text and
+  // never touches those inputs.
   var ae = document.activeElement;
-  if(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return false;
+  var wrap = document.getElementById('itemsWrap');
+  if(ae && wrap && wrap.contains(ae)) return false;
   var popup = document.getElementById('codeSentOverlay');
   if(popup && popup.classList.contains('show')) return false;
   var signPopup = document.getElementById('signInFirstOverlay');
@@ -567,7 +576,7 @@ function updateLastSyncUI(){
   if(!sbUser || !sbUser.email) return;
   var pillText = document.getElementById('connPillText'); if(!pillText) return;
   var when = lastSyncAt ? lastSyncAt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
-  pillText.textContent = 'Live — signed in as ' + sbUser.email + ' · synced ' + when;
+  pillText.textContent = 'Live — signed in as ' + sbUser.email + ' · synced ' + when + (autoRefreshFailCount >= 3 ? ' · sync delayed' : '');
 }
 async function autoRefreshTick(){
   if(!autoRefreshSafeToRun()) return;
@@ -578,9 +587,17 @@ async function autoRefreshTick(){
     var activity = document.getElementById('activityWrap');
     if(activity && activity.style.display !== 'none') await sbLoadLogs();
     lastSyncAt = new Date();
+    autoRefreshFailCount = 0;
     updateLastSyncUI();
   }catch(e){
-    // Silent: a failed tick changes nothing on screen; the next tick retries.
+    // A failed tick changes nothing on screen, but after 3 in a row the
+    // shown data may be stale: say so once instead of silently claiming
+    // a fresh sync. The next successful tick clears the warning.
+    autoRefreshFailCount++;
+    if(autoRefreshFailCount === 3){
+      showToast('Sync isn\'t reaching the shared list — will keep retrying');
+      updateLastSyncUI();
+    }
   }finally{
     autoRefreshBusy = false;
     if((window.scrollY || 0) !== scrollY) window.scrollTo(0, scrollY);
